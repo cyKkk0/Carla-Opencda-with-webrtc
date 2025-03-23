@@ -15,11 +15,6 @@ else
 fi
 
 # 删除 outputs 目录中的文件
-if [ -d "$OUTPUTS_DIR" ]; then
-    echo "Deleting files in $OUTPUTS_DIR..."
-    find "$OUTPUTS_DIR" -type f -exec rm -f {} \;
-else
-    echo "$OUTPUTS_DIR does not exist."
-fi
+rm -rf $OUTPUTS_DIR/*
 
 echo "File deletion complete."
