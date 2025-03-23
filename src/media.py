@@ -15,9 +15,9 @@ class CameraVideoStreamTrack(VideoStreamTrack):
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         self.frame_count = 0
         self.track_id = track_id
-        if not os.path.exists(f'./inputs/video_track/{self.track_id}'):
+        if not os.path.exists(f'../inputs/video_track/{self.track_id}'):
             print(f'output_folder not exist, creating inputs/video_track/{self.track_id}......')
-            os.makedirs(f'inputs/video_track/{self.track_id}')
+            os.makedirs(f'../inputs/video_track/{self.track_id}')
 
     async def recv(self):
         self.frame_count += 1
@@ -26,7 +26,7 @@ class CameraVideoStreamTrack(VideoStreamTrack):
             print("Failed to read frame from camera")
             return None
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        cv2.imwrite(f'./inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', frame)
+        cv2.imwrite(f'../inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', frame)
         video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
         video_frame.pts = self.frame_count
         video_frame.time_base = fractions.Fraction(1, 30)  # 30 FPS
@@ -49,9 +49,9 @@ class ExternalVideoStreamTrack(VideoStreamTrack):
         if self.frame is None:
             await asyncio.sleep(1 / 30)  # 没有帧时，保持 30FPS 速率
             return None
-        if not os.path.exists(f'./inputs/video_track/{self.id}'):
-            os.mkdir(f'./inputs/video_track/{self.id}')
-        cv2.imwrite(f'./inputs/video_track/{self.id}/send_frame_{self.frame_count}.jpg', self.frame)
+        if not os.path.exists(f'../inputs/video_track/{self.id}'):
+            os.mkdir(f'../inputs/video_track/{self.id}')
+        cv2.imwrite(f'../inputs/video_track/{self.id}/send_frame_{self.frame_count}.jpg', self.frame)
         video_frame = VideoFrame.from_ndarray(self.frame, format="rgb24")
         video_frame.pts = self.frame_count
         video_frame.time_base = fractions.Fraction(1, 30)
@@ -70,9 +70,9 @@ class LoopingVideoStreamTrack(VideoStreamTrack):
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
         print(f'fps: {self.fps}')
         self.frame_count = 0
-        if not os.path.exists(f'./inputs/video_track/{self.track_id}'):
-            os.makedirs(f'./inputs/video_track/{self.track_id}')
-            print(f'creating ./inputs/video_track/{self.track_id} .......')
+        if not os.path.exists(f'../inputs/video_track/{self.track_id}'):
+            os.makedirs(f'../inputs/video_track/{self.track_id}')
+            print(f'creating ../inputs/video_track/{self.track_id} .......')
 
     async def recv(self):
         ret, frame = self.cap.read()
@@ -85,7 +85,7 @@ class LoopingVideoStreamTrack(VideoStreamTrack):
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # Convert to RGB
 
         self.frame_count += 1
-        cv2.imwrite(f'./inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', frame)
+        cv2.imwrite(f'../inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', frame)
 
         # Create video frame to send over WebRTC
         video_frame = VideoFrame.from_ndarray(frame, format="rgb24")

@@ -44,11 +44,11 @@ class VideoReceiver:
                 # timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]  # Current time with milliseconds
                 # cv2.putText(frame, ti/mestamp, (frame.shape[1] - 300, frame.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
                 # cv2.putText(frame, timestamp, (10, frame.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-                if not os.path.exists(f'outputs/video_track/{self.track_id}'):
-                    os.makedirs(f'outputs/video_track/{self.track_id}')
+                if not os.path.exists(f'../outputs/video_track/{self.track_id}'):
+                    os.makedirs(f'../outputs/video_track/{self.track_id}')
                 # cv2.imwrite(f"./received_frame_{frame_count}.jpg", frame)
                 if frame_count < 10:
-                    cv2.imwrite(f"outputs/video_track/{self.track_id}/received_frame_{frame_count}.jpg", frame)
+                    cv2.imwrite(f"../outputs/video_track/{self.track_id}/received_frame_{frame_count}.jpg", frame)
     
                 # if frame_count >= 10:
                     # break

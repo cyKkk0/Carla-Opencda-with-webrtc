@@ -42,7 +42,7 @@ class VideoReceiver:
                 # cv2.putText(frame, timestamp, (10, frame.shape[0] - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
                 if not os.path.exists('outputs'):
                     os.mkdir('outputs')
-                cv2.imwrite(f"./outputs/received_frame_{frame_count}.jpg", frame)
+                cv2.imwrite(f"../outputs/received_frame_{frame_count}.jpg", frame)
                 # print(f"Saved frame {frame_count} to file")
                 # print(frame.shape)
                 # cv2.imshow("Frame", frame)
