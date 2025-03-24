@@ -36,22 +36,25 @@ class ExternalVideoStreamTrack(VideoStreamTrack):
     """ 允许外部动态推送帧 """
     def __init__(self, track_id):
         super().__init__()
-        self.id = track_id
+        self.track_id = track_id
         self.frame = None
         self.frame_count = 0
+        self.new_frame_event = asyncio.Event()
 
     def push_f(self, frame):
         """ 外部推送视频帧 """
         self.frame = frame
         self.frame_count += 1
+        self.new_frame_event.set()
 
     async def recv(self):
+        await self.new_frame_event.wait()
         if self.frame is None:
             await asyncio.sleep(1 / 30)  # 没有帧时，保持 30FPS 速率
             return None
-        if not os.path.exists(f'../inputs/video_track/{self.id}'):
-            os.mkdir(f'../inputs/video_track/{self.id}')
-        cv2.imwrite(f'../inputs/video_track/{self.id}/send_frame_{self.frame_count}.jpg', self.frame)
+        if not os.path.exists(f'../inputs/video_track/{self.track_id}'):
+            os.makedirs(f'../inputs/video_track/{self.track_id}')
+        cv2.imwrite(f'../inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', self.frame)
         video_frame = VideoFrame.from_ndarray(self.frame, format="rgb24")
         video_frame.pts = self.frame_count
         video_frame.time_base = fractions.Fraction(1, 30)
