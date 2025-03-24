@@ -74,6 +74,7 @@ def run_scenario(opt, config_yaml):
             for i, single_cav in enumerate(single_cav_list):
                 single_cav.update_info()
                 control = single_cav.run_step()
+                # TODO: control message is given by program, transport in the main function?
                 single_cav.vehicle.apply_control(control)
 
             for rsu in rsu_list:
