@@ -49,9 +49,6 @@ class ExternalVideoStreamTrack(VideoStreamTrack):
 
     async def recv(self):
         await self.new_frame_event.wait()
-        if self.frame is None:
-            await asyncio.sleep(1 / 30)  # 没有帧时，保持 30FPS 速率
-            return None
         if not os.path.exists(f'../inputs/video_track/{self.track_id}'):
             os.makedirs(f'../inputs/video_track/{self.track_id}')
         cv2.imwrite(f'../inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', self.frame)

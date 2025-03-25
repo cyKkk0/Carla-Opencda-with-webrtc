@@ -16,7 +16,7 @@ import carla
 import cv2
 import numpy as np
 import open3d as o3d
-
+import asyncio
 import opencda.core.sensing.perception.sensor_transformation as st
 from opencda.core.common.misc import \
     cal_distance_angle, get_speed, get_speed_sumo
@@ -64,25 +64,63 @@ class CameraSensor:
 
         spawn_point = self.spawn_point_estimation(relative_position,
                                                   global_position)
-
+        self.webrtc_server = webrtc_server
+        self.webrtc_client = webrtc_client
+        
         if vehicle is not None:
             self.sensor = world.spawn_actor(
                 blueprint, spawn_point, attach_to=vehicle)
         else:
             self.sensor = world.spawn_actor(blueprint, spawn_point)
 
-        self.id = str(uuid.uuid1())
         self.image = None
         self.timstamp = None
         self.frame = 0
         weak_self = weakref.ref(self)
-        self.sensor.listen(
+
+        # only listen without webrtc
+        if not webrtc_server or not webrtc_client:
+            self.sensor.listen(
             lambda event: CameraSensor._on_rgb_image_event(
                 weak_self, event))
+        else:
+            asyncio.run(self.add_track_and_listen())
 
         # camera attributes
         self.image_width = int(self.sensor.attributes['image_size_x'])
         self.image_height = int(self.sensor.attributes['image_size_y'])
+
+    async def add_track_and_listen(self):
+        self.track, self.track_id = await self.webrtc_server.add_video_track(source='external') # add track
+        self.webrtc_client.video_tracks[self.track.id].set_weak_self(weakref.ref(self))
+        # set call_back function to handle the frame from receiver
+        self.webrtc_client.video_tracks[self.track.id].set_callback_func(CameraSensor._on_rgb_image_event_webrtc()) 
+        self.sensor.listen(lambda event: CameraSensor.ready_to_send(event))    
+
+
+    @staticmethod
+    def ready_to_send(self, event):
+        """CAMERA  method"""
+        self.webrtc_server.push_frame(np.array(event.raw_data)) # push frame to track
+        # TODO: the following attr can't be transported, any other way to solve it?
+        self.frame = event.frame
+        self.timestamp = event.timestamp
+
+
+    @staticmethod
+    def _on_rgb_image_event_webrtc(weak_self, image):
+        """CAMERA  method"""
+        self = weak_self()
+        if not self:
+            return
+        image = image.reshape((self.image_height, self.image_width, 4))
+        # we need to remove the alpha channel
+        image = image[:, :, :3]
+
+        self.image = image
+        # self.frame = event.frame
+        # self.timestamp = event.timestamp
+
 
     @staticmethod
     def spawn_point_estimation(relative_position, global_position):
@@ -109,6 +147,7 @@ class CameraSensor:
 
         return spawn_point
 
+    
     @staticmethod
     def _on_rgb_image_event(weak_self, event):
         """CAMERA  method"""
@@ -121,16 +160,16 @@ class CameraSensor:
         image = image[:, :, :3]
 
         self.image = image
+        # TODO: the following attr can't be transported, any other way to solve it?
         self.frame = event.frame
         self.timestamp = event.timestamp
         if not os.path.exists(f'/home/bupt/cykkk/inputs/'):
             os.makedirs(f'/home/bupt/cykkk/inputs/')
-        if self.frame < 50:
-            cv2.imwrite(f'/home/bupt/cykkk/inputs/{self.frame}.jpg', cv2.cvtColor(self.image, cv2.COLOR_RGB2BGR))
-            print(f'saving /home/bupt/cykkk/inputs/{self.frame}.jpg')
-            print(self.image)
+        # if self.frame < 50:
+        #     cv2.imwrite(f'/home/bupt/cykkk/inputs/{self.frame}.jpg', cv2.cvtColor(self.image, cv2.COLOR_RGB2BGR))
+        #     print(f'saving /home/bupt/cykkk/inputs/{self.frame}.jpg')
+        #     print(self.image)      
         
-
 
 class LidarSensor:
     """

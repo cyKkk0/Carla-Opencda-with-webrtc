@@ -174,9 +174,12 @@ class ScenarioManager:
                  cav_world=None,
                  webrtc_server=None,
                  webrtc_client=None):
+        
+        self.webrtc_server = webrtc_server
+        self.webrtc_client = webrtc_client
+
         self.scenario_params = scenario_params
         self.carla_version = carla_version
-
         simulation_config = scenario_params['world']
 
         # set random seed if stated
@@ -269,9 +272,7 @@ class ScenarioManager:
     # TODO: create vehicle manager here
     def create_vehicle_manager(self, application,
                                map_helper=None,
-                               data_dump=False,
-                               webrtc_server=None,
-                               webrtc_client=None):
+                               data_dump=False):
         """
         Create a list of single CAVs.
 
@@ -334,8 +335,8 @@ class ScenarioManager:
                 self.carla_map, self.cav_world,
                 current_time=self.scenario_params['current_time'],
                 data_dumping=data_dump,
-                webrtc_server=webrtc_server,
-                webrtc_client=webrtc_client)
+                webrtc_server=self.webrtc_server,
+                webrtc_client=self.webrtc_client)
 
             self.world.tick()
 

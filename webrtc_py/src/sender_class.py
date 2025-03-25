@@ -16,6 +16,7 @@ class WebRTCStreamer:
         self.video_tracks = {}   # 存储所有视频流
         self.if_connected = False
         self.ready = asyncio.Event()
+        self.lock = asyncio.Lock() # only one track can be added at a time
 
     async def renegotiate_sdp(self):
         if not self.if_connected:
@@ -46,29 +47,33 @@ class WebRTCStreamer:
 
     async def add_video_track(self, track_id, source="camera", camera_id=0, width=640, height=480, file_path = './exam_video/test1.mp4'):
         """ 运行时动态添加视频流（支持摄像头或外部输入） """
-        if track_id in self.video_tracks:
-            print(f"Track {track_id} already exists.")
-            return
-        
-        if source == "camera":
-            video_track = CameraVideoStreamTrack(camera_id, width, height, track_id)
-            print('I\'m a camera track!')
-        elif source == "external":
-            video_track = ExternalVideoStreamTrack(track_id)
-        elif source == 'video_file':
-            video_track = LoopingVideoStreamTrack(file_path, track_id)
-            print('I\'m from file!')
-        else:
-            raise ValueError("Invalid source. Use 'camera' or 'external'.")
+        # if track_id in self.video_tracks:
+        #     print(f"Track {track_id} already exists.")
+        #     return
+        # TODO: track_id should be generated inside the function instead of outside
+        async with self.lock:
+            track_id = len(self.video_tracks)
+            if source == "camera":
+                video_track = CameraVideoStreamTrack(camera_id, width, height, track_id)
+                print('I\'m a camera track!')
+            elif source == "external":
+                video_track = ExternalVideoStreamTrack(track_id)
+            elif source == 'video_file':
+                video_track = LoopingVideoStreamTrack(file_path, track_id)
+                print('I\'m from file!')
+            else:
+                raise ValueError("Invalid source. Use 'camera' or 'external'.")
 
-        self.video_tracks[track_id] = video_track
-        
-        self.pc.addTrack(video_track)
+            self.video_tracks[track_id] = video_track
+            
+            self.pc.addTrack(video_track)
 
-        print(f"--- Added video track: {track_id}")
-        
-        await self.renegotiate_sdp()
+            print(f"--- Added video track: {track_id}")
+            
+            await self.renegotiate_sdp()
+            return video_track, track_id
 
+    # iff necessary?
     def push_frame(self, track_id, frame):
         """ 向指定的外部视频流推送帧 """
         if track_id in self.video_tracks and isinstance(self.video_tracks[track_id], ExternalVideoStreamTrack):
@@ -82,20 +87,22 @@ class WebRTCStreamer:
         if label in self.data_channels:
             print(f"Data channel {label} already exists.")
             return
-        
-        channel = self.pc.createDataChannel(label)
-        self.data_channels[label] = channel
 
-        @channel.on("open")
-        def on_open():
-            print(f"Data channel {label} is open.")
+        async with self.lock:
+            channel = self.pc.createDataChannel(label)
+            self.data_channels[label] = channel
 
-        @channel.on("message")
-        def on_message(message):
-            print(f"Received on {label}: {message}")
+            @channel.on("open")
+            def on_open():
+                print(f"Data channel {label} is open.")
 
-        print(f"Added data channel: {label}")
-        await self.renegotiate_sdp()
+            @channel.on("message")
+            def on_message(message):
+                print(f"Received on {label}: {message}")
+
+            print(f"Added data channel: {label}")
+            await self.renegotiate_sdp()
+            return channel, label
 
     async def setup_webrtc_and_run(self):
         

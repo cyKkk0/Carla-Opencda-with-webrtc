@@ -18,6 +18,13 @@ class VideoReceiver:
     def __init__(self, track, track_id):
         self.track = track
         self.track_id = track_id
+        self.call_back = None
+
+    def set_callback_func(self, callback_func):
+        self.call_back = callback_func
+
+    def set_weak_self(self, weak_self):
+        self.weak_self = weak_self
 
     async def handle_track(self):
         # print("Inside handle track")
@@ -34,6 +41,8 @@ class VideoReceiver:
                 else:
                     print(f"Unexpected frame type: {type(frame)}")
                     continue
+                if self.call_back:
+                    self.call_back(weak_self=self.weak_self, frame=frame)
 
                 if not os.path.exists(f'../outputs/video_track/{self.track_id}'):
                     os.makedirs(f'../outputs/video_track/{self.track_id}')

@@ -85,6 +85,9 @@ class VehicleManager(object):
             webrtc_server=None,
             webrtc_client=None):
 
+        self.webrtc_server = webrtc_server
+        self.webrtc_client = webrtc_client
+
         # an unique uuid for this vehicle
         self.vid = str(uuid.uuid1())
         self.vehicle = vehicle
