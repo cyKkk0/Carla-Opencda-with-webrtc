@@ -28,6 +28,20 @@ from opencda.core.sensing.perception.o3d_lidar_libs import \
     o3d_camera_lidar_fusion
 
 
+def save_raw_data(raw_data, frame):
+    """Save raw lidar data to a file"""
+    file_path = f"/home/bupt/cykkk/record/lidar_raw_data_frame_{frame}.bin"
+    with open(file_path, "wb") as f:
+        f.write(raw_data)
+    print(f"Raw data saved to {file_path}")
+
+def save_processed_data(processed_data, frame):
+    """Save processed lidar data to a file"""
+    file_path = f"/home/bupt/cykkk/record/lidar_processed_data_frame_{frame}.npy"
+    np.save(file_path, processed_data)
+    print(f"Processed data saved to {file_path}")
+
+
 class CameraSensor:
     """
     Camera manager for vehicle or infrastructure.
@@ -77,15 +91,16 @@ class CameraSensor:
         self.timstamp = None
         self.frame = 0
         weak_self = weakref.ref(self)
-
+        print('creating cameras')
         # only listen without webrtc
         if not webrtc_server or not webrtc_client:
+            print('only listening')
             self.sensor.listen(
-            lambda event: CameraSensor._on_rgb_image_event(
-                weak_self, event))
+                lambda event: CameraSensor._on_rgb_image_event(
+                    weak_self, event))
         else:
             asyncio.run(self.add_track_and_listen())
-
+        print('ok')
         # camera attributes
         self.image_width = int(self.sensor.attributes['image_size_x'])
         self.image_height = int(self.sensor.attributes['image_size_y'])
@@ -163,8 +178,8 @@ class CameraSensor:
         # TODO: the following attr can't be transported, any other way to solve it?
         self.frame = event.frame
         self.timestamp = event.timestamp
-        if not os.path.exists(f'/home/bupt/cykkk/inputs/'):
-            os.makedirs(f'/home/bupt/cykkk/inputs/')
+        # if not os.path.exists(f'/home/bupt/cykkk/inputs/'):
+            # os.makedirs(f'/home/bupt/cykkk/inputs/')
         # if self.frame < 50:
         #     cv2.imwrite(f'/home/bupt/cykkk/inputs/{self.frame}.jpg', cv2.cvtColor(self.image, cv2.COLOR_RGB2BGR))
         #     print(f'saving /home/bupt/cykkk/inputs/{self.frame}.jpg')
@@ -268,6 +283,9 @@ class LidarSensor:
         self.data = data
         self.frame = event.frame
         self.timestamp = event.timestamp
+        if self.frame == 100:
+            save_raw_data(event.raw_data, event.frame)
+            save_processed_data(data, event.frame)
 
 
 class SemanticLidarSensor:
@@ -342,7 +360,7 @@ class SemanticLidarSensor:
         self.timestamp = None
         self.frame = 0
         # open3d point cloud object
-        self.o3d_pointcloud = o3d.geometry.PointCloud()
+        self.o3d_pointcloud = o3d.geometry.PointCloud() # not necessary, is generated from the lidar.data
 
         weak_self = weakref.ref(self)
         self.sensor.listen(
@@ -444,7 +462,6 @@ class PerceptionManager:
             assert len(mount_position) == self.camera_num, \
                 "The camera number has to be the same as the length of the" \
                 "relative positions list"
-
             for i in range(self.camera_num):
                 self.rgb_camera.append(
                     CameraSensor(
@@ -456,6 +473,7 @@ class PerceptionManager:
 
         # we only spawn the LiDAR when perception module is activated or lidar
         # visualization is needed
+        print('creating lidars')
         if self.activate or self.lidar_visualize:
             self.lidar = LidarSensor(vehicle,
                                      self.carla_world,

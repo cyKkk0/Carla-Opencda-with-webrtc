@@ -111,6 +111,7 @@ class VehicleManager(object):
         self.perception_manager = PerceptionManager(
             vehicle, sensing_config['perception'], cav_world,
             data_dumping, webrtc_server=webrtc_server, webrtc_client=webrtc_client)
+        print('perception ok!')
         # map manager
         self.map_manager = MapManager(vehicle,
                                       carla_map,
