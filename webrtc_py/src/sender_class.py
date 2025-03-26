@@ -123,16 +123,16 @@ async def main():
 
     task1 = asyncio.create_task(streamer.run())
     await asyncio.sleep(5)
-    await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='video_file', file_path='../exam_video/test1.mp4'))
+    await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='video_file', file_path='/home/bupt/cykkk/carla&opencda/webrtc_py/exam_video/test1.mp4'))
     await asyncio.create_task(streamer.add_data_channel('test1'))
     await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
-    img = cv2.imread('../test/test.jpg')
+    img = cv2.imread('/home/bupt/cykkk/carla&opencda/webrtc_py/test/test.jpg')
     count = 0   
     while True:
         await asyncio.sleep(1)
         count += 1
         streamer.data_channels['test1'].send(pickle.dumps(f'hello {count}'))
-        if count > 10:
+        if count > 100:
             break
         streamer.push_frame(len(streamer.video_tracks)-1, img)
     await task1
