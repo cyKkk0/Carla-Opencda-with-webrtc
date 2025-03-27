@@ -14,6 +14,9 @@ from av import VideoFrame
 import numpy as np
 import pickle
 
+def call_back():
+    print('I call back!')
+
 class VideoReceiver:
     def __init__(self, track, track_id):
         self.track = track
@@ -80,12 +83,18 @@ class WebRTCReceiver:
 
         @self.pc.on("datachannel")
         def on_datachannel(channel):
+            channel.call_back = call_back
             self.data_channels[channel.label] = channel
+            
             print(f"Data channel {channel.label} created.")
             @channel.on("message")
             def on_message(message):
                 # self.data_channels[channel.label].on_message(message)
-                print(f"Received on {channel.label}: {pickle.loads(message)}")
+                if hasattr(self.data_channels[channel.label], 'call_back'):
+                    self.data_channels[channel.label].call_back()
+                    # self.data_channels[channel.label].call_back(self.data_channels[channel.label].weak_self, pickle.loads(message))
+                else:
+                    print(f"Received on {channel.label}: {pickle.loads(message)}")
             
         @self.pc.on("connectionstatechange")
         async def on_connectionstatechange():

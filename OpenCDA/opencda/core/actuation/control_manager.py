@@ -37,7 +37,7 @@ class ControlManager(object):
         Update ego vehicle information for controller.
         """
         self.controller.update_info(ego_pos, ego_speed)
-
+    # TODO: controll information
     def run_step(self, target_speed, waypoint):
         """
         Execute current controller step.

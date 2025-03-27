@@ -11,6 +11,7 @@ import sys
 import time
 import os
 import uuid
+import pickle
 
 import carla
 import cv2
@@ -214,7 +215,7 @@ class LidarSensor:
 
     """
 
-    def __init__(self, vehicle, world, config_yaml, global_position):
+    def __init__(self, vehicle, world, config_yaml, global_position, webrtc_server=None, webrtc_client=None):
         if vehicle is not None:
             world = vehicle.get_world()
         blueprint = world.get_blueprint_library().find('sensor.lidar.ray_cast')
@@ -256,6 +257,9 @@ class LidarSensor:
         else:
             self.sensor = world.spawn_actor(blueprint, spawn_point)
 
+        self.webrtc_server = webrtc_server
+        self.webrtc_client = webrtc_client
+        
         # lidar data
         self.data = None
         self.timestamp = None
@@ -264,9 +268,39 @@ class LidarSensor:
         self.o3d_pointcloud = o3d.geometry.PointCloud()
 
         weak_self = weakref.ref(self)
-        self.sensor.listen(
-            lambda event: LidarSensor._on_data_event(
-                weak_self, event))
+        if not webrtc_server or not webrtc_client:
+            self.sensor.listen(
+                lambda event: LidarSensor._on_data_event(
+                    weak_self, event))
+        else:
+            # for datachannel
+            self.vid = str(uuid.uuid1())                                
+            asyncio.run(self.add_channel_and_listen())
+
+    async def add_channel_and_listen(self):
+        self.channel, self.label = await self.webrtc_server.add_data_channel(self.vid) # add track
+        self.webrtc_client.data_channels[self.label].weak_self = weakref.ref(self)
+        # set call_back function to handle the data from receiver        
+        self.webrtc_client.data_channels[self.label].call_back = LidarSensor._on_data_event_webrtc()
+        self.sensor.listen(lambda event: LidarSensor.ready_to_send(event))
+
+    @staticmethod
+    def ready_to_send(self, event):
+        """Lidar  method"""
+        self.webrtc_server.data_channels[self.label].send(pickle.dumps(np.frombuffer(event.raw_data, dtype=np.dtype('f4'))))
+        # TODO: the following attr can't be transported, any other way to solve it?
+        self.frame = event.frame
+        self.timestamp = event.timestamp
+
+    @staticmethod
+    def _on_data_event_webrtc(weak_self, data):
+        """Lidar  method"""
+        self = weak_self()
+        if not self:
+            return
+        data = np.reshape(data, (int(data.shape[0] / 4), 4))
+
+        self.data = data
 
     @staticmethod
     def _on_data_event(weak_self, event):
@@ -283,9 +317,9 @@ class LidarSensor:
         self.data = data
         self.frame = event.frame
         self.timestamp = event.timestamp
-        if self.frame == 100:
-            save_raw_data(event.raw_data, event.frame)
-            save_processed_data(data, event.frame)
+        # if self.frame == 100:
+        #     save_raw_data(event.raw_data, event.frame)
+        #     save_processed_data(data, event.frame)
 
 
 class SemanticLidarSensor:

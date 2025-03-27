@@ -1,6 +1,4 @@
 class receiver():
-    def __init__(self, callback_func):
-        self.call_back = callback_func
 
     def call_bk(self, x):
         self.call_back(x)
@@ -13,7 +11,8 @@ def a(x):
     print(f'{x} I\'m a callback function!')
 
 if __name__ == '__main__':
-    recv = receiver(a)
+    recv = receiver()
+    recv.call_back = a
     recv.add_attr()
     recv.call_bk(666)
     print(recv.x)

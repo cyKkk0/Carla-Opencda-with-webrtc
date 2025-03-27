@@ -2,9 +2,11 @@ import asyncio
 import pickle
 import cv2
 import os
+import numpy as np
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.signaling import TcpSocketSignaling
 from media import CameraVideoStreamTrack, ExternalVideoStreamTrack, LoopingVideoStreamTrack
+
 
 class WebRTCStreamer:
     def __init__(self, ip_address, port):
@@ -36,10 +38,11 @@ class WebRTCStreamer:
         obj = await self.signaling.receive()
         if isinstance(obj, RTCSessionDescription):
             await self.pc.setRemoteDescription(obj)
-            print("Remote description set")
-            senders = self.pc.getSenders()
-            for sender in senders:
-                print(f"Sender Track ID: {sender.track.id}, Kind: {sender.track.kind}")
+            # print("Remote description set")
+            # senders = self.pc.getSenders()
+            # for sender in senders:
+            #     print(sender)
+            #     print(f"Sender Track ID: {sender.track.id}, Kind: {sender.track.kind}")
         elif obj is None:
             print("Signaling ended")
         else:
@@ -84,11 +87,10 @@ class WebRTCStreamer:
 
     async def add_data_channel(self, label):
         """ 运行时动态添加数据通道 """
-        if label in self.data_channels:
-            print(f"Data channel {label} already exists.")
-            return
-
         async with self.lock:
+            # if label in self.data_channels:
+            #     print(f"Data channel {label} already exists.")
+            #     return None, None
             channel = self.pc.createDataChannel(label)
             self.data_channels[label] = channel
 
@@ -116,6 +118,9 @@ class WebRTCStreamer:
         """ 运行 WebRTC 服务器 """
         await self.setup_webrtc_and_run()
 
+def call_back():
+    print('I call back!!!')
+
 async def main():
     ip_address = "127.0.0.1"
     port = 8080
@@ -123,18 +128,25 @@ async def main():
 
     task1 = asyncio.create_task(streamer.run())
     await asyncio.sleep(5)
-    await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='video_file', file_path='/home/bupt/cykkk/carla&opencda/webrtc_py/exam_video/test1.mp4'))
+    # await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='video_file', file_path='/home/bupt/cykkk/carla&opencda/webrtc_py/exam_video/test1.mp4'))
     await asyncio.create_task(streamer.add_data_channel('test1'))
-    await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
-    img = cv2.imread('/home/bupt/cykkk/carla&opencda/webrtc_py/test/test.jpg')
-    count = 0   
+    streamer.data_channels['test1'].call_back = call_back
+    print(id(streamer.data_channels['test1']))
+    # await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
+    # with open('/home/bupt/cykkk/record/lidar_processed_data_frame_100.npy', 'rb') as f:
+        # data = f.read()
+    # data_array = np.frombuffer(data, dtype=np.float32)
+    # await asyncio.create_task(streamer.add_data_channel('test2'))
+    # img = cv2.imread('/home/bupt/cykkk/carla&opencda/webrtc_py/test/test.jpg')
+    count = 0
     while True:
         await asyncio.sleep(1)
         count += 1
         streamer.data_channels['test1'].send(pickle.dumps(f'hello {count}'))
+    #     streamer.data_channels['test2'].send(pickle.dumps(data_array))
         if count > 100:
             break
-        streamer.push_frame(len(streamer.video_tracks)-1, img)
+        # streamer.push_frame(len(streamer.video_tracks)-1, img)
     await task1
     
 
