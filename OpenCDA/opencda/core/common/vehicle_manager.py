@@ -6,7 +6,7 @@ Basic class of CAV
 # License: TDG-Attribution-NonCommercial-NoDistrib
 
 import uuid
-
+import asyncio
 from opencda.core.actuation.control_manager \
     import ControlManager
 from opencda.core.application.platooning.platoon_behavior_agent\
@@ -83,11 +83,14 @@ class VehicleManager(object):
             current_time='',
             data_dumping=False,
             webrtc_server=None,
-            webrtc_client=None):
+            webrtc_client=None,
+            server_loop=None,
+            client_loop=None):
 
         self.webrtc_server = webrtc_server
         self.webrtc_client = webrtc_client
-
+        self.server_loop = server_loop
+        self.client_loop = client_loop
         # an unique uuid for this vehicle
         self.vid = str(uuid.uuid1())
         self.vehicle = vehicle
@@ -106,11 +109,12 @@ class VehicleManager(object):
         # TODO: IMU and Gns sensor
         self.localizer = LocalizationManager(
             vehicle, sensing_config['localization'], carla_map)
+        print('localization ok!')
         # perception module
         # TODO: Camera and Lidar sensor
         self.perception_manager = PerceptionManager(
             vehicle, sensing_config['perception'], cav_world,
-            data_dumping, webrtc_server=webrtc_server, webrtc_client=webrtc_client)
+            data_dumping, webrtc_server=self.webrtc_server, webrtc_client=self.webrtc_client, server_loop=self.server_loop, client_loop=self.client_loop)
         print('perception ok!')
         # map manager
         self.map_manager = MapManager(vehicle,
@@ -145,6 +149,11 @@ class VehicleManager(object):
             self.data_dumper = None
 
         cav_world.update_vehicle_manager(self)
+
+    async def activate_sensor_web(self, mutex):
+        mutex.acquire()
+        await asyncio.create_task(self.perception_manager.activate_sensor_web())
+        mutex.release()
 
     def set_destination(
             self,

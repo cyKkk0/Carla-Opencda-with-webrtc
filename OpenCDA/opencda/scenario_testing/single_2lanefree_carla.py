@@ -19,6 +19,34 @@ from opencda.scenario_testing.utils.yaml_utils import \
     add_current_time
 
 
+def control_to_dict(control):
+    """
+    将 carla.VehicleControl 对象转换为字典
+    """
+    return {
+        'throttle': control.throttle,
+        'steer': control.steer,
+        'brake': control.brake,
+        'hand_brake': control.hand_brake,
+        'reverse': control.reverse,
+        'manual_gear_shift': control.manual_gear_shift,
+        'gear': control.gear
+    }
+
+def dict_to_control(control_dict):
+    """
+    将字典转换为 carla.VehicleControl 对象
+    """
+    return carla.VehicleControl(
+        throttle=control_dict.get('throttle', 0.0),
+        steer=control_dict.get('steer', 0.0),
+        brake=control_dict.get('brake', 0.0),
+        hand_brake=control_dict.get('hand_brake', False),
+        reverse=control_dict.get('reverse', False),
+        manual_gear_shift=control_dict.get('manual_gear_shift', False),
+        gear=control_dict.get('gear', 0)
+    )
+
 def run_scenario(opt, scenario_params):
     try:
         scenario_params = add_current_time(scenario_params)
@@ -71,7 +99,9 @@ def run_scenario(opt, scenario_params):
             for i, single_cav in enumerate(single_cav_list):
                 single_cav.update_info()
                 control = single_cav.run_step()
-                single_cav.vehicle.apply_control(control)
+                data_dict = control_to_dict(control)
+                data_ctrl = dict_to_control(data_dict)
+                single_cav.vehicle.apply_control(data_ctrl)
 
     finally:
         eval_manager.evaluate()

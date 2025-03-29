@@ -11,6 +11,8 @@ import math
 import random
 import sys
 import json
+import threading
+import asyncio
 from random import shuffle
 from omegaconf import OmegaConf
 from omegaconf.listconfig import ListConfig
@@ -173,11 +175,14 @@ class ScenarioManager:
                  town=None,
                  cav_world=None,
                  webrtc_server=None,
-                 webrtc_client=None):
+                 webrtc_client=None,
+                 server_loop=None,
+                 client_loop=None):
         
         self.webrtc_server = webrtc_server
         self.webrtc_client = webrtc_client
-
+        self.server_loop = server_loop
+        self.client_loop = client_loop
         self.scenario_params = scenario_params
         self.carla_version = carla_version
         simulation_config = scenario_params['world']
@@ -336,10 +341,16 @@ class ScenarioManager:
                 current_time=self.scenario_params['current_time'],
                 data_dumping=data_dump,
                 webrtc_server=self.webrtc_server,
-                webrtc_client=self.webrtc_client)
-
+                webrtc_client=self.webrtc_client,
+                server_loop=self.server_loop,
+                client_loop=self.client_loop)
+            # add track one by one
+            # mutex = threading.Lock()
+            # if self.webrtc_server and self.webrtc_client:
+            #     asyncio.create_task(vehicle_manager.activate_sensor_web(mutex))
+            
+            # mutex.acquire()
             self.world.tick()
-
             vehicle_manager.v2x_manager.set_platoon(None)
 
             destination = carla.Location(x=cav_config['destination'][0],

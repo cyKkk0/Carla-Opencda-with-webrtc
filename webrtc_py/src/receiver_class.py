@@ -49,19 +49,18 @@ class VideoReceiver:
 
                 if not os.path.exists(f'../outputs/video_track/{self.track_id}'):
                     os.makedirs(f'../outputs/video_track/{self.track_id}')
-                # cv2.imwrite(f"./received_frame_{frame_count}.jpg", frame)
-                if frame_count < 10:
+                if frame_count % 100 == 1:
                     cv2.imwrite(f"../outputs/video_track/{self.track_id}/received_frame_{frame_count}.jpg", frame)
     
             except asyncio.TimeoutError:
                 print("Timeout waiting for frame, continuing...")
             except Exception as e:
+                print(self.track_id)
                 print(f"Error in handle_track: {str(e)}")
-                if "Connection" in str(e):
-                    break
+                break
         print("Exiting handle_track")
 
-class WebRTCReceiver:
+class Webrtc_client:
     def __init__(self, ip_address, port):
         self.ip_address = ip_address
         self.port = port
@@ -90,9 +89,8 @@ class WebRTCReceiver:
             @channel.on("message")
             def on_message(message):
                 # self.data_channels[channel.label].on_message(message)
-                if hasattr(self.data_channels[channel.label], 'call_back'):
-                    self.data_channels[channel.label].call_back()
-                    # self.data_channels[channel.label].call_back(self.data_channels[channel.label].weak_self, pickle.loads(message))
+                if hasattr(self.data_channels[channel.label], 'call_back_2'):
+                    self.data_channels[channel.label].call_back_2(self.data_channels[channel.label].weak_self, pickle.loads(message))
                 else:
                     print(f"Received on {channel.label}: {pickle.loads(message)}")
             
@@ -114,8 +112,8 @@ class WebRTCReceiver:
         await self.pc.setLocalDescription(answer)
         print("Local description set")
 
-        print("Local SDP:")
-        print(self.pc.localDescription.sdp)
+        # print("Local SDP:")
+        # print(self.pc.localDescription.sdp)
 
         await self.signaling.send(self.pc.localDescription)
         print("Answer sent to sender")
@@ -124,10 +122,7 @@ class WebRTCReceiver:
         while self.pc.connectionState != "connected":
             await asyncio.sleep(0.1)
 
-        print("Connection established, waiting for frames...")
-
         while True:
-            # print('I\'m waiting!')
             obj = await self.signaling.receive()
 
             if isinstance(obj, RTCSessionDescription):
@@ -136,10 +131,6 @@ class WebRTCReceiver:
                 print("Answer created")
                 await self.pc.setLocalDescription(answer)
                 print("Local description set")
-
-                print("Local SDP:")
-                print(self.pc.localDescription.sdp)
-
                 await self.signaling.send(self.pc.localDescription)
                 print("Answer sent to sender")
             elif isinstance(obj, RTCIceCandidate):
@@ -151,7 +142,7 @@ class WebRTCReceiver:
 async def main():
     ip_address = "127.0.0.1"
     port = 8080
-    receiver = WebRTCReceiver(ip_address, port)
+    receiver = Webrtc_client(ip_address, port)
     await receiver.start()
 
 if __name__ == "__main__":

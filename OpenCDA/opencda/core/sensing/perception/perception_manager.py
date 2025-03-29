@@ -12,6 +12,7 @@ import time
 import os
 import uuid
 import pickle
+import threading
 
 import carla
 import cv2
@@ -70,8 +71,7 @@ class CameraSensor:
         The carla sensor that mounts at the vehicle.
 
     """
-
-    def __init__(self, vehicle, world, relative_position, global_position, webrtc_server=None, webrtc_client=None):
+    def __init__(self, vehicle, world, relative_position, global_position, webrtc_server=None, webrtc_client=None, server_loop=None, client_loop=None):
         if vehicle is not None:
             world = vehicle.get_world()
         blueprint = world.get_blueprint_library().find('sensor.camera.rgb')
@@ -92,32 +92,35 @@ class CameraSensor:
         self.timstamp = None
         self.frame = 0
         weak_self = weakref.ref(self)
-        print('creating cameras')
-        # only listen without webrtc
+        # if withour webrtc, then need run func: add_track_and_listen()
         if not webrtc_server or not webrtc_client:
             print('only listening')
             self.sensor.listen(
                 lambda event: CameraSensor._on_rgb_image_event(
                     weak_self, event))
         else:
-            asyncio.run(self.add_track_and_listen())
-        print('ok')
-        # camera attributes
+            # mutex.acquire()
+            future = asyncio.run_coroutine_threadsafe(self.add_track_and_listen(), server_loop)
+            future.result()  # 等待完成
+            # asyncio.run(self.add_track_and_listen(mutex))
+        # mutex.acquire()
         self.image_width = int(self.sensor.attributes['image_size_x'])
         self.image_height = int(self.sensor.attributes['image_size_y'])
 
     async def add_track_and_listen(self):
-        self.track, self.track_id = await self.webrtc_server.add_video_track(source='external') # add track
+        self.track, self.track_id = await self.webrtc_server.add_video_track(0, source='external') # add track
         self.webrtc_client.video_tracks[self.track.id].set_weak_self(weakref.ref(self))
         # set call_back function to handle the frame from receiver
-        self.webrtc_client.video_tracks[self.track.id].set_callback_func(CameraSensor._on_rgb_image_event_webrtc()) 
-        self.sensor.listen(lambda event: CameraSensor.ready_to_send(event))    
-
+        self.webrtc_client.video_tracks[self.track.id].set_callback_func(CameraSensor._on_rgb_image_event_webrtc) 
+        self.sensor.listen(lambda event: CameraSensor.ready_to_send(self, event))
+        # mutex.release()
+        # print('release the lock')
+        print('creating camera track success')
 
     @staticmethod
     def ready_to_send(self, event):
         """CAMERA  method"""
-        self.webrtc_server.push_frame(np.array(event.raw_data)) # push frame to track
+        self.webrtc_server.push_frame(self.track_id, np.array(event.raw_data)) # push frame to track
         # TODO: the following attr can't be transported, any other way to solve it?
         self.frame = event.frame
         self.timestamp = event.timestamp
@@ -268,20 +271,24 @@ class LidarSensor:
         self.o3d_pointcloud = o3d.geometry.PointCloud()
 
         weak_self = weakref.ref(self)
-        if not webrtc_server or not webrtc_client:
-            self.sensor.listen(
-                lambda event: LidarSensor._on_data_event(
-                    weak_self, event))
-        else:
-            # for datachannel
-            self.vid = str(uuid.uuid1())                                
-            asyncio.run(self.add_channel_and_listen())
+        self.sensor.listen(
+        lambda event: LidarSensor._on_data_event(
+            weak_self, event))
+        # if not webrtc_server or not webrtc_client:
+        #     self.sensor.listen(
+        #         lambda event: LidarSensor._on_data_event(
+        #             weak_self, event))
+        # else:
+        #     # for datachannel
+        #     print('creating lidar')
+        #     self.vid = str(uuid.uuid1())                                
+        #     asyncio.run(self.add_channel_and_listen())
 
     async def add_channel_and_listen(self):
         self.channel, self.label = await self.webrtc_server.add_data_channel(self.vid) # add track
         self.webrtc_client.data_channels[self.label].weak_self = weakref.ref(self)
         # set call_back function to handle the data from receiver        
-        self.webrtc_client.data_channels[self.label].call_back = LidarSensor._on_data_event_webrtc()
+        self.webrtc_client.data_channels[self.label].call_back_2 = LidarSensor._on_data_event_webrtc()
         self.sensor.listen(lambda event: LidarSensor.ready_to_send(event))
 
     @staticmethod
@@ -460,7 +467,7 @@ class PerceptionManager:
 
     def __init__(self, vehicle, config_yaml, cav_world,
                  data_dump=False, carla_world=None, infra_id=None,
-                 webrtc_server=None, webrtc_client=None):
+                 webrtc_server=None, webrtc_client=None, server_loop=None, client_loop=None):
         self.vehicle = vehicle
         self.carla_world = carla_world if carla_world is not None \
             else self.vehicle.get_world()
@@ -497,11 +504,18 @@ class PerceptionManager:
                 "The camera number has to be the same as the length of the" \
                 "relative positions list"
             for i in range(self.camera_num):
-                self.rgb_camera.append(
-                    CameraSensor(
-                        vehicle, self.carla_world, mount_position[i],
-                        self.global_position, webrtc_server=webrtc_server, webrtc_client=webrtc_client))
-
+                print(i, '/', self.camera_num)
+                camera = CameraSensor(
+                                vehicle, self.carla_world, mount_position[i],
+                                self.global_position, webrtc_server=webrtc_server, webrtc_client=webrtc_client, server_loop=server_loop, client_loop=client_loop)
+                self.rgb_camera.append(camera)
+                # self.rgb_camera.append(CameraSensor(
+                #                 vehicle, self.carla_world, mount_position[i],
+                #                 self.global_position, webrtc_server=webrtc_server, webrtc_client=webrtc_client))
+                # mutex = threading.Lock()
+                # if webrtc_server and webrtc_client:
+                #     mutex.acquire()
+                #     asyncio.run(camera.add_track_and_listen(mutex))
         else:
             self.rgb_camera = None
 
@@ -512,7 +526,9 @@ class PerceptionManager:
             self.lidar = LidarSensor(vehicle,
                                      self.carla_world,
                                      config_yaml['lidar'],
-                                     self.global_position)
+                                     self.global_position,
+                                     webrtc_server=webrtc_server,
+                                     webrtc_client=webrtc_client)
             self.o3d_vis = o3d_visualizer_init(self.id)
         else:
             self.lidar = None
@@ -536,6 +552,11 @@ class PerceptionManager:
         # traffic light detection related
         self.traffic_thresh = config_yaml['traffic_light_thresh'] \
             if 'traffic_light_thresh' in config_yaml else 50
+
+    async def activate_sensor_web(self):
+        for camera in self.rgb_camera:
+            await camera.add_track_and_listen()
+        
 
     def dist(self, a):
         """

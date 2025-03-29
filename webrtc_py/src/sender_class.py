@@ -5,10 +5,18 @@ import os
 import numpy as np
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.signaling import TcpSocketSignaling
-from media import CameraVideoStreamTrack, ExternalVideoStreamTrack, LoopingVideoStreamTrack
+try:
+    from src.media import CameraVideoStreamTrack, ExternalVideoStreamTrack, LoopingVideoStreamTrack
+except:
+    pass
+
+try:
+    from media import CameraVideoStreamTrack, ExternalVideoStreamTrack, LoopingVideoStreamTrack
+except:
+    pass
 
 
-class WebRTCStreamer:
+class Webrtc_server:
     def __init__(self, ip_address, port):
         self.ip_address = ip_address
         self.port = port
@@ -17,13 +25,10 @@ class WebRTCStreamer:
         self.data_channels = {}  # 存储所有数据通道
         self.video_tracks = {}   # 存储所有视频流
         self.if_connected = False
-        self.ready = asyncio.Event()
-        self.lock = asyncio.Lock() # only one track can be added at a time
-
+        
     async def renegotiate_sdp(self):
         if not self.if_connected:
             await self.signaling.connect()
-            
             self.if_connected = True
 
         """重新协商 SDP 以更新媒体轨道"""
@@ -31,18 +36,14 @@ class WebRTCStreamer:
         offer = await self.pc.createOffer()
         print('Set local description')
         await self.pc.setLocalDescription(offer)
-        # print(self.pc.localDescription.sdp)
         print('Sending new SDP offer')
         await self.signaling.send(self.pc.localDescription)
         print("Sent new SDP offer")
         obj = await self.signaling.receive()
+        print('get', obj)
         if isinstance(obj, RTCSessionDescription):
             await self.pc.setRemoteDescription(obj)
-            # print("Remote description set")
-            # senders = self.pc.getSenders()
-            # for sender in senders:
-            #     print(sender)
-            #     print(f"Sender Track ID: {sender.track.id}, Kind: {sender.track.kind}")
+            print("Remote description set")
         elif obj is None:
             print("Signaling ended")
         else:
@@ -54,16 +55,18 @@ class WebRTCStreamer:
         #     print(f"Track {track_id} already exists.")
         #     return
         # TODO: track_id should be generated inside the function instead of outside
+        print('waiting for lock')
         async with self.lock:
+            print('get lock')
             track_id = len(self.video_tracks)
             if source == "camera":
                 video_track = CameraVideoStreamTrack(camera_id, width, height, track_id)
-                print('I\'m a camera track!')
+                # print('I\'m a camera track!')
             elif source == "external":
                 video_track = ExternalVideoStreamTrack(track_id)
             elif source == 'video_file':
                 video_track = LoopingVideoStreamTrack(file_path, track_id)
-                print('I\'m from file!')
+                # print('I\'m from file!')
             else:
                 raise ValueError("Invalid source. Use 'camera' or 'external'.")
 
@@ -71,9 +74,8 @@ class WebRTCStreamer:
             
             self.pc.addTrack(video_track)
 
-            print(f"--- Added video track: {track_id}")
-            
             await self.renegotiate_sdp()
+            print(f"--- Added video track: {track_id}")
             return video_track, track_id
 
     # iff necessary?
@@ -107,16 +109,17 @@ class WebRTCStreamer:
             return channel, label
 
     async def setup_webrtc_and_run(self):
-        
         await self.add_video_track(len(self.video_tracks))
-        
-        # await self.add_video_track(len(self.video_tracks), source='video_file', file_path='./exam_video/test1.mp4')
-        while True:
-            await asyncio.sleep(5) 
+        self.running = asyncio.Event()
+        await self.running.wait()
+        # while True:
+        #     await asyncio.sleep(10000)
         
     async def run(self):
         """ 运行 WebRTC 服务器 """
+        self.lock = asyncio.Lock()      # only one track can be added at a time
         await self.setup_webrtc_and_run()
+        
 
 def call_back():
     print('I call back!!!')
@@ -124,11 +127,11 @@ def call_back():
 async def main():
     ip_address = "127.0.0.1"
     port = 8080
-    streamer = WebRTCStreamer(ip_address, port)
+    streamer = Webrtc_server(ip_address, port)
 
     task1 = asyncio.create_task(streamer.run())
     await asyncio.sleep(5)
-    # await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='video_file', file_path='/home/bupt/cykkk/carla&opencda/webrtc_py/exam_video/test1.mp4'))
+    await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='video_file', file_path='/home/bupt/cykkk/carla&opencda/webrtc_py/exam_video/test1.mp4'))
     await asyncio.create_task(streamer.add_data_channel('test1'))
     streamer.data_channels['test1'].call_back = call_back
     print(id(streamer.data_channels['test1']))
@@ -143,7 +146,6 @@ async def main():
         await asyncio.sleep(1)
         count += 1
         streamer.data_channels['test1'].send(pickle.dumps(f'hello {count}'))
-    #     streamer.data_channels['test2'].send(pickle.dumps(data_array))
         if count > 100:
             break
         # streamer.push_frame(len(streamer.video_tracks)-1, img)
