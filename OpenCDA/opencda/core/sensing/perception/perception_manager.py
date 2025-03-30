@@ -539,13 +539,6 @@ class PerceptionManager:
                                 vehicle, self.carla_world, mount_position[i],
                                 self.global_position, webrtc_server=webrtc_server, webrtc_client=webrtc_client, server_loop=server_loop, client_loop=client_loop)
                 self.rgb_camera.append(camera)
-                # self.rgb_camera.append(CameraSensor(
-                #                 vehicle, self.carla_world, mount_position[i],
-                #                 self.global_position, webrtc_server=webrtc_server, webrtc_client=webrtc_client))
-                # mutex = threading.Lock()
-                # if webrtc_server and webrtc_client:
-                #     mutex.acquire()
-                #     asyncio.run(camera.add_track_and_listen(mutex))
         else:
             self.rgb_camera = None
         print('Camera OK!')

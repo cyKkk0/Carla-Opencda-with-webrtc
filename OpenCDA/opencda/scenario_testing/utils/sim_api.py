@@ -344,12 +344,7 @@ class ScenarioManager:
                 webrtc_client=self.webrtc_client,
                 server_loop=self.server_loop,
                 client_loop=self.client_loop)
-            # add track one by one
-            # mutex = threading.Lock()
-            # if self.webrtc_server and self.webrtc_client:
-            #     asyncio.create_task(vehicle_manager.activate_sensor_web(mutex))
-            
-            # mutex.acquire()
+
             self.world.tick()
             vehicle_manager.v2x_manager.set_platoon(None)
 

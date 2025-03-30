@@ -31,6 +31,7 @@ class Webrtc_server:
             await self.signaling.connect()
             self.if_connected = True
 
+        print('status: ', await self.pc.getStats())
         """重新协商 SDP 以更新媒体轨道"""
         print("Starting SDP renegotiation...")
         offer = await self.pc.createOffer()
