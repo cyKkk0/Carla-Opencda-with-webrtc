@@ -8,6 +8,7 @@ evaluation_outputs/
 .vscode/
 inputs/
 outputs/
+trash/
 # C extensions
 *.so
 
