@@ -47,11 +47,11 @@ class VideoReceiver:
                         self.call_back2(weak_self=self.weak_self, image=frame)
                     elif self.catg == 'test':
                         self.call_back2()
-                if not os.path.exists(f'/home/bupt/cykkk/carla&opencda/outputs/video_track/{self.track_id}'):
-                    os.makedirs(f'/home/bupt/cykkk/carla&opencda/outputs/video_track/{self.track_id}')
+                if not os.path.exists(f'../outputs/video_track/{self.track_id}'):
+                    os.makedirs(f'../outputs/video_track/{self.track_id}')
                 try:
                     if frame_count % 100 == 1:
-                        cv2.imwrite(f"/home/bupt/cykkk/carla&opencda/outputs/video_track/{self.track_id}/received_frame_{frame_count}.jpg", frame)
+                        cv2.imwrite(f"../outputs/video_track/{self.track_id}/received_frame_{frame_count}.jpg", frame)
                 except Exception as e:
                     print(e)
             except asyncio.TimeoutError:

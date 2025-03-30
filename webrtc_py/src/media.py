@@ -15,9 +15,9 @@ class CameraVideoStreamTrack(VideoStreamTrack):
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         self.frame_count = 0
         self.track_id = track_id
-        if not os.path.exists(f'/home/bupt/cykkk/carla&opencda/inputs/video_track/{self.track_id}'):
+        if not os.path.exists(f'../inputs/video_track/{self.track_id}'):
             print(f'output_folder not exist, creating inputs/video_track/{self.track_id}......')
-            os.makedirs(f'/home/bupt/cykkk/carla&opencda/inputs/video_track/{self.track_id}')
+            os.makedirs(f'../inputs/video_track/{self.track_id}')
 
     async def recv(self):
         self.frame_count += 1
@@ -28,7 +28,7 @@ class CameraVideoStreamTrack(VideoStreamTrack):
         frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         try:
             if self.frame_count % 100 == 1:
-                cv2.imwrite(f'/home/bupt/cykkk/carla&opencda/inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', frame)
+                cv2.imwrite(f'../inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', frame)
         except Exception as e:
             print(self.track_id, e)
         video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
@@ -55,11 +55,11 @@ class ExternalVideoStreamTrack(VideoStreamTrack):
         await self.new_frame_event.wait()
         self.new_frame_event.clear()
         print(self.frame_count)
-        if not os.path.exists(f'/home/bupt/cykkk/carla&opencda/inputs/video_track/{self.track_id}'):
-            os.makedirs(f'/home/bupt/cykkk/carla&opencda/inputs/video_track/{self.track_id}')
+        if not os.path.exists(f'../inputs/video_track/{self.track_id}'):
+            os.makedirs(f'../inputs/video_track/{self.track_id}')
         try:
             if self.frame_count % 100 == 1:
-                cv2.imwrite(f'/home/bupt/cykkk/carla&opencda/inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', self.frame)
+                cv2.imwrite(f'../inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', self.frame)
         except Exception as e:
             print(self.track_id, e)
         video_frame = VideoFrame.from_ndarray(self.frame, format="rgb24")
@@ -79,8 +79,8 @@ class LoopingVideoStreamTrack(VideoStreamTrack):
             raise Exception(f"Could not open video file {video_path}")
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.frame_count = 0
-        if not os.path.exists(f'/home/bupt/cykkk/carla&opencda/inputs/video_track/{self.track_id}'):
-            os.makedirs(f'/home/bupt/cykkk/carla&opencda/inputs/video_track/{self.track_id}')
+        if not os.path.exists(f'../inputs/video_track/{self.track_id}'):
+            os.makedirs(f'../inputs/video_track/{self.track_id}')
             print(f'creating ../inputs/video_track/{self.track_id} .......')
 
     async def recv(self):
@@ -96,7 +96,7 @@ class LoopingVideoStreamTrack(VideoStreamTrack):
         self.frame_count += 1
         try:
             if self.frame_count % 100 == 1:
-                cv2.imwrite(f'/home/bupt/cykkk/carla&opencda/inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', frame)
+                cv2.imwrite(f'../inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', frame)
         except Exception as e:
             print(self.track_id, e)
         # Create video frame to send over WebRTC
