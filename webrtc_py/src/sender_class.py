@@ -108,8 +108,9 @@ class Webrtc_server:
             await self.renegotiate_sdp()
             return channel, label
 
-    async def setup_webrtc_and_run(self):
-        await self.add_video_track(len(self.video_tracks))
+    async def setup_webrtc_and_run(self):    
+        await self.add_data_channel('test2')
+        # await self.add_video_track(len(self.video_tracks))
         self.running = asyncio.Event()
         await self.running.wait()
         # while True:
@@ -131,11 +132,15 @@ async def main():
 
     task1 = asyncio.create_task(streamer.run())
     await asyncio.sleep(5)
-    await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='video_file', file_path='/home/bupt/cykkk/carla&opencda/webrtc_py/exam_video/test1.mp4'))
-    await asyncio.create_task(streamer.add_data_channel('test1'))
-    streamer.data_channels['test1'].call_back = call_back
-    print(id(streamer.data_channels['test1']))
-    # await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
+    # await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='video_file', file_path='/home/bupt/cykkk/carla&opencda/webrtc_py/exam_video/test1.mp4'))
+    # await asyncio.create_task(streamer.add_data_channel('test1'))
+    # streamer.data_channels['test1'].call_back = call_back
+    # print(id(streamer.data_channels['test1']))
+
+    source = 'camera'
+    image = np.load(f'/home/bupt/cykkk/record/{source}_processed_data_frame_100.npy')
+    image = image[:, :, :3]
+    ex_track, ex_track_id = await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
     # with open('/home/bupt/cykkk/record/lidar_processed_data_frame_100.npy', 'rb') as f:
         # data = f.read()
     # data_array = np.frombuffer(data, dtype=np.float32)
@@ -145,10 +150,10 @@ async def main():
     while True:
         await asyncio.sleep(1)
         count += 1
-        streamer.data_channels['test1'].send(pickle.dumps(f'hello {count}'))
+        # streamer.data_channels['test1'].send(pickle.dumps(f'hello {count}'))
         if count > 100:
             break
-        # streamer.push_frame(len(streamer.video_tracks)-1, img)
+        streamer.push_frame(ex_track_id, image)
     await task1
     
 

@@ -14,6 +14,7 @@ import time
 import pickle
 import asyncio
 import threading
+import numpy as np
 from omegaconf import OmegaConf
 
 from opencda.version import __version__
@@ -54,37 +55,44 @@ def run_server(webrtc_server, server_loop):
     asyncio.set_event_loop(server_loop)
     server_loop.run_until_complete(webrtc_server.run())
 
+
 def run_client(webrtc_client, client_loop):
     client_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(client_loop)
     client_loop.run_until_complete(webrtc_client.start())
 
-async def run_test(webrtc_server):
+def test_callb_func():
+    print('in call back!')
+
+async def run_test(webrtc_server, webrtc_client):
     # asyncio.set_event_loop(loop)
-    await asyncio.create_task(webrtc_server.add_video_track(len(webrtc_server.video_tracks), source='video_file', file_path='/home/bupt/cykkk/carla&opencda/webrtc_py/exam_video/test1.mp4'))
     await asyncio.create_task(webrtc_server.add_data_channel('test1'))
+    source = 'camera'
+    image = np.load(f'/home/bupt/cykkk/record/{source}_processed_data_frame_100.npy')
+    image = image[:, :, :3]
+    ex_track, ex_track_id = await asyncio.create_task(webrtc_server.add_video_track(len(webrtc_server.video_tracks), source='external'))
+    webrtc_client.video_tracks[ex_track.id].set_callback_func(test_callb_func) 
+    webrtc_client.video_tracks[ex_track.id].catg = 'test'
     print(id(webrtc_server.data_channels['test1']))
     count = 0
     while True:
         await asyncio.sleep(1)
         count += 1
         webrtc_server.data_channels['test1'].send(pickle.dumps(f'hello {count}'))
+        webrtc_server.push_frame(ex_track_id, image)
         if count > 100:
             break
 
-def test(webrtc_server, loop):
-    future = asyncio.run_coroutine_threadsafe(run_test(webrtc_server), loop)
+
+def test(webrtc_server, loop, webrtc_client):
+    future = asyncio.run_coroutine_threadsafe(run_test(webrtc_server, webrtc_client), loop)
     future.result()  # 等待完成
     # asyncio.run(run_test(webrtc_server, loop))
 
+
 def run_scene(scenario_runner, opt, scene_dict, webrtc_server, webrtc_client, server_loop, client_loop):
-    try:
-        scenario_runner(opt, scene_dict, webrtc_server=webrtc_server, webrtc_client=webrtc_client, server_loop=server_loop, client_loop=client_loop)
-    except:
-        return
+    scenario_runner(opt, scene_dict, webrtc_server=webrtc_server, webrtc_client=webrtc_client, server_loop=server_loop, client_loop=client_loop)
     
-
-
 
 def main():
     # parse the arguments
@@ -125,10 +133,7 @@ def main():
         Webrtc_client = getattr(receiver_module, 'Webrtc_client')
         webrtc_server = Webrtc_server('127.0.0.1', 8080)
         webrtc_client = Webrtc_client('127.0.0.1', 8080)
-        # task1 = asyncio.create_task(run_with_webrtc(webrtc_server, webrtc_client))
-        # await asyncio.sleep(6)
-        # run_scene(scenario_runner, opt, scene_dict, webrtc_server=webrtc_server, webrtc_client=webrtc_client)
-        # await task1
+
         server_loop = asyncio.new_event_loop()
         client_loop = None
         # client_loop = asyncio.new_event_loop()
@@ -144,9 +149,8 @@ def main():
         # thread4.start()
         # thread3.start()
         run_scene(scenario_runner, opt, scene_dict, webrtc_server, webrtc_client, server_loop, client_loop)
+        # test(webrtc_server, server_loop, webrtc_client)
         thread1.join()
-        # task1 = asyncio.create_task(run_webrtc(webrtc_server, webrtc_client))
-        # asyncio.run(run_webrtc(webrtc_server, webrtc_client))
     else:
         scenario_runner(opt, scene_dict)
 

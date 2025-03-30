@@ -1,8 +1,13 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
+cache/
+evaluation_outputs/
+*.pt
 *.py[cod]
 *$py.class
 .vscode/
+inputs/
+outputs/
 # C extensions
 *.so
 

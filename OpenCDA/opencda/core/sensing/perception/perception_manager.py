@@ -30,19 +30,21 @@ from opencda.core.sensing.perception.o3d_lidar_libs import \
     o3d_camera_lidar_fusion
 
 
-def save_raw_data(raw_data, frame):
-    """Save raw lidar data to a file"""
-    file_path = f"/home/bupt/cykkk/record/lidar_raw_data_frame_{frame}.bin"
+def save_raw_data(raw_data, frame, source):
+    """Save raw ata to a file"""
+    file_path = f"/home/bupt/cykkk/record/{source}_raw_data_frame_{frame}.bin"
     with open(file_path, "wb") as f:
         f.write(raw_data)
     print(f"Raw data saved to {file_path}")
 
-def save_processed_data(processed_data, frame):
-    """Save processed lidar data to a file"""
-    file_path = f"/home/bupt/cykkk/record/lidar_processed_data_frame_{frame}.npy"
+def save_processed_data(processed_data, frame, source):
+    """Save processed data to a file"""
+    file_path = f"/home/bupt/cykkk/record/{source}_processed_data_frame_{frame}.npy"
     np.save(file_path, processed_data)
     print(f"Processed data saved to {file_path}")
 
+def test_callb():
+    print('in call back func!')
 
 class CameraSensor:
     """
@@ -71,7 +73,8 @@ class CameraSensor:
         The carla sensor that mounts at the vehicle.
 
     """
-    def __init__(self, vehicle, world, relative_position, global_position, webrtc_server=None, webrtc_client=None, server_loop=None, client_loop=None):
+    def __init__(self, vehicle, world, relative_position, global_position,
+                 webrtc_server=None, webrtc_client=None, server_loop=None, client_loop=None):
         if vehicle is not None:
             world = vehicle.get_world()
         blueprint = world.get_blueprint_library().find('sensor.camera.rgb')
@@ -92,36 +95,57 @@ class CameraSensor:
         self.timstamp = None
         self.frame = 0
         weak_self = weakref.ref(self)
-        # if withour webrtc, then need run func: add_track_and_listen()
+        self.image_width = int(self.sensor.attributes['image_size_x'])
+        self.image_height = int(self.sensor.attributes['image_size_y'])
+        # if without webrtc, then need run func: add_track_and_listen()
         if not webrtc_server or not webrtc_client:
             print('only listening')
             self.sensor.listen(
                 lambda event: CameraSensor._on_rgb_image_event(
                     weak_self, event))
         else:
-            # mutex.acquire()
+            # commit the task to the server loop
             future = asyncio.run_coroutine_threadsafe(self.add_track_and_listen(), server_loop)
-            future.result()  # 等待完成
-            # asyncio.run(self.add_track_and_listen(mutex))
-        # mutex.acquire()
-        self.image_width = int(self.sensor.attributes['image_size_x'])
-        self.image_height = int(self.sensor.attributes['image_size_y'])
+            future.result()
+
 
     async def add_track_and_listen(self):
         self.track, self.track_id = await self.webrtc_server.add_video_track(0, source='external') # add track
         self.webrtc_client.video_tracks[self.track.id].set_weak_self(weakref.ref(self))
         # set call_back function to handle the frame from receiver
         self.webrtc_client.video_tracks[self.track.id].set_callback_func(CameraSensor._on_rgb_image_event_webrtc) 
-        self.sensor.listen(lambda event: CameraSensor.ready_to_send(self, event))
-        # mutex.release()
-        # print('release the lock')
+        self.webrtc_client.video_tracks[self.track.id].catg = 'Camera'
+        self.sensor.listen(lambda event: self.ready_to_send(event))
+        # self.webrtc_client.video_tracks[self.track.id].set_callback_func(test_callb) 
+        # self.webrtc_client.video_tracks[self.track.id].catg = 'test'
+        # self.sensor.listen(lambda event: self.test_send(event))
         print('creating camera track success')
 
-    @staticmethod
+    def test_send(self, event):
+        print(event.frame)
+        img = np.array(event.raw_data)
+        img = img.reshape((self.image_height, self.image_width, 4))
+        img = img[:, :, :3]
+        print('img', img.shape)
+        source = 'camera'
+        image = np.load(f'/home/bupt/cykkk/record/{source}_processed_data_frame_100.npy')
+        image = image[:, :, :3]
+        self.image = image
+        # TODO: the following attr can't be transported, any other way to solve it?
+        self.frame = event.frame
+        self.timestamp = event.timestamp
+        self.webrtc_server.push_frame(self.track_id, img)
+
     def ready_to_send(self, event):
         """CAMERA  method"""
-        self.webrtc_server.push_frame(self.track_id, np.array(event.raw_data)) # push frame to track
+        image = np.array(event.raw_data)
+        image = image.reshape((self.image_height, self.image_width, 4))
+        image = image[:, :, :3]
+        
+        self.webrtc_server.push_frame(self.track_id, image) # push frame to track
         # TODO: the following attr can't be transported, any other way to solve it?
+        if event.frame < 10:
+            self.image = image
         self.frame = event.frame
         self.timestamp = event.timestamp
 
@@ -132,10 +156,6 @@ class CameraSensor:
         self = weak_self()
         if not self:
             return
-        image = image.reshape((self.image_height, self.image_width, 4))
-        # we need to remove the alpha channel
-        image = image[:, :, :3]
-
         self.image = image
         # self.frame = event.frame
         # self.timestamp = event.timestamp
@@ -174,10 +194,16 @@ class CameraSensor:
         if not self:
             return
         image = np.array(event.raw_data)
+        # if event.frame == 100:
+        #     save_raw_data(image, 100, 'camera')
+        #     print(image.shape)
         image = image.reshape((self.image_height, self.image_width, 4))
+        # if event.frame == 100:
+        #     save_processed_data(image, 100, 'camera')
+        #     print(image.shape)
         # we need to remove the alpha channel
         image = image[:, :, :3]
-
+        # print(image.shape)
         self.image = image
         # TODO: the following attr can't be transported, any other way to solve it?
         self.frame = event.frame
@@ -187,7 +213,7 @@ class CameraSensor:
         # if self.frame < 50:
         #     cv2.imwrite(f'/home/bupt/cykkk/inputs/{self.frame}.jpg', cv2.cvtColor(self.image, cv2.COLOR_RGB2BGR))
         #     print(f'saving /home/bupt/cykkk/inputs/{self.frame}.jpg')
-        #     print(self.image)      
+        #     print(self.image) 
         
 
 class LidarSensor:
@@ -217,8 +243,8 @@ class LidarSensor:
         Lidar sensor that will be attached to the vehicle.
 
     """
-
-    def __init__(self, vehicle, world, config_yaml, global_position, webrtc_server=None, webrtc_client=None):
+    def __init__(self, vehicle, world, config_yaml, global_position,
+                 webrtc_server=None, webrtc_client=None, server_loop=None, client_loop=None):
         if vehicle is not None:
             world = vehicle.get_world()
         blueprint = world.get_blueprint_library().find('sensor.lidar.ray_cast')
@@ -262,6 +288,8 @@ class LidarSensor:
 
         self.webrtc_server = webrtc_server
         self.webrtc_client = webrtc_client
+        self.server_loop = server_loop
+        self.client_loop = client_loop
         
         # lidar data
         self.data = None
@@ -281,15 +309,17 @@ class LidarSensor:
         # else:
         #     # for datachannel
         #     print('creating lidar')
-        #     self.vid = str(uuid.uuid1())                                
-        #     asyncio.run(self.add_channel_and_listen())
+        #     self.vid = str(uuid.uuid1())
+        #     future = asyncio.run_coroutine_threadsafe(self.add_channel_and_listen(), server_loop)
+        #     future.result()                              
 
     async def add_channel_and_listen(self):
         self.channel, self.label = await self.webrtc_server.add_data_channel(self.vid) # add track
         self.webrtc_client.data_channels[self.label].weak_self = weakref.ref(self)
+        self.webrtc_client.data_channels[self.label].cate = 'Lidar'
         # set call_back function to handle the data from receiver        
-        self.webrtc_client.data_channels[self.label].call_back_2 = LidarSensor._on_data_event_webrtc()
-        self.sensor.listen(lambda event: LidarSensor.ready_to_send(event))
+        self.webrtc_client.data_channels[self.label].call_back_2 = LidarSensor._on_data_event_webrtc
+        self.sensor.listen(lambda event: LidarSensor.ready_to_send(self, event))
 
     @staticmethod
     def ready_to_send(self, event):
@@ -325,8 +355,8 @@ class LidarSensor:
         self.frame = event.frame
         self.timestamp = event.timestamp
         # if self.frame == 100:
-        #     save_raw_data(event.raw_data, event.frame)
-        #     save_processed_data(data, event.frame)
+        #     save_raw_data(event.raw_data, event.frame, 'lidar')
+        #     save_processed_data(data, event.frame, 'lidar')
 
 
 class SemanticLidarSensor:
@@ -518,7 +548,7 @@ class PerceptionManager:
                 #     asyncio.run(camera.add_track_and_listen(mutex))
         else:
             self.rgb_camera = None
-
+        print('Camera OK!')
         # we only spawn the LiDAR when perception module is activated or lidar
         # visualization is needed
         print('creating lidars')
@@ -528,12 +558,14 @@ class PerceptionManager:
                                      config_yaml['lidar'],
                                      self.global_position,
                                      webrtc_server=webrtc_server,
-                                     webrtc_client=webrtc_client)
+                                     webrtc_client=webrtc_client,
+                                     server_loop=server_loop,
+                                     client_loop=client_loop)
             self.o3d_vis = o3d_visualizer_init(self.id)
         else:
             self.lidar = None
             self.o3d_vis = None
-
+        print('Lidar ok!')
         # if data dump is true, semantic lidar is also spawned
         self.data_dump = data_dump
         if data_dump:

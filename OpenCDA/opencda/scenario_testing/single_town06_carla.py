@@ -3,6 +3,7 @@
 # License: TDG-Attribution-NonCommercial-NoDistrib
 
 import carla
+import asyncio
 import threading
 import opencda.scenario_testing.utils.sim_api as sim_api
 from opencda.core.common.cav_world import CavWorld
@@ -38,6 +39,11 @@ def dict_to_control(control_dict):
         manual_gear_shift=control_dict.get('manual_gear_shift', False),
         gear=control_dict.get('gear', 0)
     )
+
+
+async def add_control_channel(single_cav, webrtc_server):
+    
+    pass
 
 
 def run_scenario(opt, scenario_params, webrtc_server=None, webrtc_client=None, server_loop=None, client_loop=None):
@@ -76,6 +82,9 @@ def run_scenario(opt, scenario_params, webrtc_server=None, webrtc_client=None, s
                               current_time=scenario_params['current_time'])
 
         spectator = scenario_manager.world.get_spectator()
+        # for i, single_cav in enumerate(single_cav_list):
+        #     future = asyncio.run_coroutine_threadsafe(add_control_channel(single_cav, webrtc_server), server_loop)
+        #     future.result()
         # run steps
         while True:
             scenario_manager.tick()

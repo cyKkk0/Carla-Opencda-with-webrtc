@@ -14,17 +14,15 @@ from av import VideoFrame
 import numpy as np
 import pickle
 
-def call_back():
-    print('I call back!')
 
 class VideoReceiver:
     def __init__(self, track, track_id):
         self.track = track
         self.track_id = track_id
-        self.call_back = None
+        self.call_back2 = None
 
     def set_callback_func(self, callback_func):
-        self.call_back = callback_func
+        self.call_back2 = callback_func
 
     def set_weak_self(self, weak_self):
         self.weak_self = weak_self
@@ -38,24 +36,28 @@ class VideoReceiver:
                 frame_count += 1                
                 if isinstance(frame, VideoFrame):
                     # print(f"Frame type: VideoFrame, pts: {frame.pts}, time_base: {frame.time_base}")
-                    frame = frame.to_ndarray(format="bgr24")
+                    frame = frame.to_ndarray(format="rgb24")
                 elif isinstance(frame, np.ndarray):
                     print(f"Frame type: numpy array")
                 else:
                     print(f"Unexpected frame type: {type(frame)}")
                     continue
-                if self.call_back:
-                    self.call_back(weak_self=self.weak_self, frame=frame)
-
-                if not os.path.exists(f'../outputs/video_track/{self.track_id}'):
-                    os.makedirs(f'../outputs/video_track/{self.track_id}')
-                if frame_count % 100 == 1:
-                    cv2.imwrite(f"../outputs/video_track/{self.track_id}/received_frame_{frame_count}.jpg", frame)
-    
+                if self.call_back2:
+                    if self.catg == 'Camera':
+                        self.call_back2(weak_self=self.weak_self, image=frame)
+                    elif self.catg == 'test':
+                        self.call_back2()
+                if not os.path.exists(f'/home/bupt/cykkk/carla&opencda/outputs/video_track/{self.track_id}'):
+                    os.makedirs(f'/home/bupt/cykkk/carla&opencda/outputs/video_track/{self.track_id}')
+                try:
+                    if frame_count % 100 == 1:
+                        cv2.imwrite(f"/home/bupt/cykkk/carla&opencda/outputs/video_track/{self.track_id}/received_frame_{frame_count}.jpg", frame)
+                except Exception as e:
+                    print(e)
             except asyncio.TimeoutError:
-                print("Timeout waiting for frame, continuing...")
+                print(f"{self.track_id} Timeout waiting for frame, continuing...")
             except Exception as e:
-                print(self.track_id)
+                # print(self.track_id)
                 print(f"Error in handle_track: {str(e)}")
                 break
         print("Exiting handle_track")
@@ -75,14 +77,13 @@ class Webrtc_client:
         # 配置 RTCPeerConnection 的事件处理
         @self.pc.on("track")
         def on_track(track):
-            if isinstance(track, MediaStreamTrack):
+            # if isinstance(track, MediaStreamTrack):
                 print(f"Receiving {track.kind} track")
                 self.video_tracks[track.id] = VideoReceiver(track, track.id)
                 asyncio.ensure_future(self.video_tracks[track.id].handle_track())
 
         @self.pc.on("datachannel")
         def on_datachannel(channel):
-            channel.call_back = call_back
             self.data_channels[channel.label] = channel
             
             print(f"Data channel {channel.label} created.")
@@ -90,19 +91,20 @@ class Webrtc_client:
             def on_message(message):
                 # self.data_channels[channel.label].on_message(message)
                 if hasattr(self.data_channels[channel.label], 'call_back_2'):
-                    self.data_channels[channel.label].call_back_2(self.data_channels[channel.label].weak_self, pickle.loads(message))
+                    if self.data_channels[channel.label].cate == 'Lidar':
+                        self.data_channels[channel.label].call_back_2(self.data_channels[channel.label].weak_self, pickle.loads(message))
+                    else:
+                        print(f"Received on {channel.label}: {pickle.loads(message)}")   
                 else:
                     print(f"Received on {channel.label}: {pickle.loads(message)}")
             
         @self.pc.on("connectionstatechange")
         async def on_connectionstatechange():
             print(f"Connection state is {self.pc.connectionState}")
-            if self.pc.connectionState == "connected":
-                print("WebRTC connection established successfully")
 
         print("Waiting for offer from sender...")
         offer = await self.signaling.receive()
-        print(f'type: {type(offer)}')
+        # print(f'type: {type(offer)}')
         print("Offer received")
         await self.pc.setRemoteDescription(offer)
         print("Remote description set")
