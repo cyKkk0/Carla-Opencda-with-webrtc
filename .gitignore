@@ -9,7 +9,8 @@ evaluation_outputs/
 inputs/
 outputs/
 trash/
-webrtc_py/test/
+test/
+test_source/
 # C extensions
 *.so
 

@@ -82,15 +82,11 @@ class VehicleManager(object):
             cav_world,
             current_time='',
             data_dumping=False,
-            webrtc_server=None,
-            webrtc_client=None,
-            server_loop=None,
-            client_loop=None):
+            Webrtc_server=None,
+            Webrtc_client=None):
 
-        self.webrtc_server = webrtc_server
-        self.webrtc_client = webrtc_client
-        self.server_loop = server_loop
-        self.client_loop = client_loop
+        self.Webrtc_server = Webrtc_server
+        self.Webrtc_client = Webrtc_client
         # an unique uuid for this vehicle
         self.vid = str(uuid.uuid1())
         self.vehicle = vehicle
@@ -109,12 +105,11 @@ class VehicleManager(object):
         # TODO: IMU and Gns sensor
         self.localizer = LocalizationManager(
             vehicle, sensing_config['localization'], carla_map)
-        print('localization ok!')
         # perception module
         # TODO: Camera and Lidar sensor
         self.perception_manager = PerceptionManager(
             vehicle, sensing_config['perception'], cav_world,
-            data_dumping, webrtc_server=self.webrtc_server, webrtc_client=self.webrtc_client, server_loop=self.server_loop, client_loop=self.client_loop)
+            data_dumping, Webrtc_server=self.Webrtc_server, Webrtc_client=self.Webrtc_client)
         print('perception ok!')
         # map manager
         self.map_manager = MapManager(vehicle,

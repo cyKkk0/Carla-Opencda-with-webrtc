@@ -41,12 +41,12 @@ def dict_to_control(control_dict):
     )
 
 
-async def add_control_channel(single_cav, webrtc_server):
+async def add_control_channel(single_cav):
     
     pass
 
 
-def run_scenario(opt, scenario_params, webrtc_server=None, webrtc_client=None, server_loop=None, client_loop=None):
+def run_scenario(opt, scenario_params, Webrtc_server=None, Webrtc_client=None):
     try:
         scenario_params = add_current_time(scenario_params)
 
@@ -59,10 +59,8 @@ def run_scenario(opt, scenario_params, webrtc_server=None, webrtc_client=None, s
                                                    opt.version,
                                                    town='Town06',
                                                    cav_world=cav_world,
-                                                   webrtc_server=webrtc_server,
-                                                   webrtc_client=webrtc_client,
-                                                   server_loop=server_loop,
-                                                   client_loop=client_loop)
+                                                   Webrtc_server=Webrtc_server,
+                                                   Webrtc_client=Webrtc_client)
 
         if opt.record:
             scenario_manager.client. \
@@ -82,9 +80,6 @@ def run_scenario(opt, scenario_params, webrtc_server=None, webrtc_client=None, s
                               current_time=scenario_params['current_time'])
 
         spectator = scenario_manager.world.get_spectator()
-        # for i, single_cav in enumerate(single_cav_list):
-        #     future = asyncio.run_coroutine_threadsafe(add_control_channel(single_cav, webrtc_server), server_loop)
-        #     future.result()
         # run steps
         while True:
             scenario_manager.tick()

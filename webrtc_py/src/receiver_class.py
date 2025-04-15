@@ -1,4 +1,6 @@
+import threading
 import asyncio
+import time
 import cv2
 import os
 from aiortc import (
@@ -9,10 +11,60 @@ from aiortc import (
     MediaStreamTrack,
     RTCDataChannel
 )
+from collections import deque
 from aiortc.contrib.signaling import TcpSocketSignaling, BYE
 from av import VideoFrame
 import numpy as np
 import pickle
+
+
+class FpsCalculator:
+    def __init__(self, window_size=30):
+        """
+        初始化帧率计算器。
+        
+        :param window_size: 滑动窗口的大小（单位：帧数），用于计算最近的帧率。
+        """
+        self.window_size = window_size
+        self.timestamps = deque(maxlen=window_size)
+        self.fps = 0.0
+        self.last_calculated_time = time.time()
+
+    def update(self, frame_count=1):
+        """
+        更新帧率计算器。
+        
+        :param frame_count: 本次调用发送的帧数(默认为1)。
+        """
+        current_time = time.time()
+        self.timestamps.extend([current_time] * frame_count)
+
+        # 如果窗口已满或达到最小时间间隔，计算帧率
+        if len(self.timestamps) >= self.window_size or (current_time - self.last_calculated_time) >= 0.1:
+            if len(self.timestamps) < 2:
+                return
+
+            # 计算窗口内的时间跨度
+            time_span = self.timestamps[-1] - self.timestamps[0]
+            if time_span <= 0:
+                return
+
+            # 计算帧率
+            self.fps = len(self.timestamps) / time_span
+            self.last_calculated_time = current_time
+
+    def get_fps(self):
+        """
+        获取当前的帧率。
+        
+        :return: 当前的帧率(FPS)
+        """
+        return self.fps
+
+
+def run_client(webrtc_client, client_loop):
+    asyncio.set_event_loop(client_loop)
+    client_loop.run_until_complete(webrtc_client.start())
 
 
 class VideoReceiver:
@@ -20,6 +72,7 @@ class VideoReceiver:
         self.track = track
         self.track_id = track_id
         self.call_back2 = None
+        self.fps_calc = FpsCalculator(20)
 
     def set_callback_func(self, callback_func):
         self.call_back2 = callback_func
@@ -35,8 +88,13 @@ class VideoReceiver:
                 frame = await asyncio.wait_for(self.track.recv(), timeout=5.0)
                 frame_count += 1                
                 if isinstance(frame, VideoFrame):
+                    self.fps_calc.update()
                     # print(f"Frame type: VideoFrame, pts: {frame.pts}, time_base: {frame.time_base}")
                     frame = frame.to_ndarray(format="rgb24")
+                    if frame_count % 20 == 0:
+                        print(f'from recv {self.track_id}: {self.fps_calc.get_fps():.1f}fps')
+                    # frame = frame.to_ndarray(format="yuv420p")
+                    # frame = cv2.cvtColor(frame, cv2.COLOR_YUV2BGR_I420)
                 elif isinstance(frame, np.ndarray):
                     print(f"Frame type: numpy array")
                 else:
@@ -47,13 +105,13 @@ class VideoReceiver:
                         self.call_back2(weak_self=self.weak_self, image=frame)
                     elif self.catg == 'test':
                         self.call_back2()
-                if not os.path.exists(f'../outputs/video_track/{self.track_id}'):
-                    os.makedirs(f'../outputs/video_track/{self.track_id}')
-                try:
-                    if frame_count % 100 == 1:
-                        cv2.imwrite(f"../outputs/video_track/{self.track_id}/received_frame_{frame_count}.jpg", frame)
-                except Exception as e:
-                    print(e)
+                # if not os.path.exists(f'../outputs/video_track/{self.track_id}'):
+                #     os.makedirs(f'../outputs/video_track/{self.track_id}')
+                # try:
+                #     if frame_count % 50 == 1:
+                #         cv2.imwrite(f"../outputs/video_track/{self.track_id}/received_frame_{frame_count}.jpg", frame)
+                # except Exception as e:
+                #     print(e)
             except asyncio.TimeoutError:
                 print(f"{self.track_id} Timeout waiting for frame, continuing...")
             except Exception as e:
@@ -140,6 +198,14 @@ class Webrtc_client:
             elif obj is BYE:
                 print("Exiting")
                 break
+
+    def run_client_in_new_thread(self):
+        time.sleep(3)
+        client_loop = asyncio.new_event_loop()
+        thread1 = threading.Thread(target=run_client, args=(self,client_loop))
+        thread1.start()
+        return thread1, client_loop
+
 
 async def main():
     ip_address = "127.0.0.1"

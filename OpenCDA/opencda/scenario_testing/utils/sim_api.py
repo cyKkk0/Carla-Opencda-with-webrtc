@@ -174,15 +174,11 @@ class ScenarioManager:
                  xodr_path=None,
                  town=None,
                  cav_world=None,
-                 webrtc_server=None,
-                 webrtc_client=None,
-                 server_loop=None,
-                 client_loop=None):
+                 Webrtc_server=None,
+                 Webrtc_client=None):
         
-        self.webrtc_server = webrtc_server
-        self.webrtc_client = webrtc_client
-        self.server_loop = server_loop
-        self.client_loop = client_loop
+        self.Webrtc_server = Webrtc_server
+        self.Webrtc_client = Webrtc_client
         self.scenario_params = scenario_params
         self.carla_version = carla_version
         simulation_config = scenario_params['world']
@@ -340,11 +336,9 @@ class ScenarioManager:
                 self.carla_map, self.cav_world,
                 current_time=self.scenario_params['current_time'],
                 data_dumping=data_dump,
-                webrtc_server=self.webrtc_server,
-                webrtc_client=self.webrtc_client,
-                server_loop=self.server_loop,
-                client_loop=self.client_loop)
-
+                Webrtc_server=self.Webrtc_server,
+                Webrtc_client=self.Webrtc_client)
+            
             self.world.tick()
             vehicle_manager.v2x_manager.set_platoon(None)
 

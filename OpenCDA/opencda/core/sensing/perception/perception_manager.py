@@ -19,6 +19,7 @@ import cv2
 import numpy as np
 import open3d as o3d
 import asyncio
+from collections import deque
 import opencda.core.sensing.perception.sensor_transformation as st
 from opencda.core.common.misc import \
     cal_distance_angle, get_speed, get_speed_sumo
@@ -43,8 +44,50 @@ def save_processed_data(processed_data, frame, source):
     np.save(file_path, processed_data)
     print(f"Processed data saved to {file_path}")
 
-def test_callb():
-    print('in call back func!')
+
+class FpsCalculator:
+    def __init__(self, window_size=30):
+        """
+        初始化帧率计算器。
+        
+        :param window_size: 滑动窗口的大小（单位：帧数），用于计算最近的帧率。
+        """
+        self.window_size = window_size
+        self.timestamps = deque(maxlen=window_size)
+        self.fps = 0.0
+        self.last_calculated_time = time.time()
+
+    def update(self, frame_count=1):
+        """
+        更新帧率计算器。
+        
+        :param frame_count: 本次调用发送的帧数(默认为1)。
+        """
+        current_time = time.time()
+        self.timestamps.extend([current_time] * frame_count)
+
+        # 如果窗口已满或达到最小时间间隔，计算帧率
+        if len(self.timestamps) >= self.window_size or (current_time - self.last_calculated_time) >= 0.1:
+            if len(self.timestamps) < 2:
+                return
+
+            # 计算窗口内的时间跨度
+            time_span = self.timestamps[-1] - self.timestamps[0]
+            if time_span <= 0:
+                return
+
+            # 计算帧率
+            self.fps = len(self.timestamps) / time_span
+            self.last_calculated_time = current_time
+
+    def get_fps(self):
+        """
+        获取当前的帧率。
+        
+        :return: 当前的帧率(FPS)
+        """
+        return self.fps
+    
 
 class CameraSensor:
     """
@@ -74,7 +117,7 @@ class CameraSensor:
 
     """
     def __init__(self, vehicle, world, relative_position, global_position,
-                 webrtc_server=None, webrtc_client=None, server_loop=None, client_loop=None):
+                 Webrtc_server=None, Webrtc_client=None, port=None):
         if vehicle is not None:
             world = vehicle.get_world()
         blueprint = world.get_blueprint_library().find('sensor.camera.rgb')
@@ -82,9 +125,12 @@ class CameraSensor:
 
         spawn_point = self.spawn_point_estimation(relative_position,
                                                   global_position)
-        self.webrtc_server = webrtc_server
-        self.webrtc_client = webrtc_client
-        
+        self.fps_calc = FpsCalculator(20)
+        if Webrtc_server and Webrtc_client:
+            self.webrtc_server = Webrtc_server('127.0.0.1', port)
+            self.webrtc_client = Webrtc_client('127.0.0.1', port)
+            _, server_loop = self.webrtc_server.run_server_in_new_thread()
+            _, _ = self.webrtc_client.run_client_in_new_thread()
         if vehicle is not None:
             self.sensor = world.spawn_actor(
                 blueprint, spawn_point, attach_to=vehicle)
@@ -97,8 +143,7 @@ class CameraSensor:
         weak_self = weakref.ref(self)
         self.image_width = int(self.sensor.attributes['image_size_x'])
         self.image_height = int(self.sensor.attributes['image_size_y'])
-        # if without webrtc, then need run func: add_track_and_listen()
-        if not webrtc_server or not webrtc_client:
+        if not Webrtc_server or not Webrtc_client:
             print('only listening')
             self.sensor.listen(
                 lambda event: CameraSensor._on_rgb_image_event(
@@ -111,43 +156,39 @@ class CameraSensor:
 
     async def add_track_and_listen(self):
         self.track, self.track_id = await self.webrtc_server.add_video_track(0, source='external') # add track
-        self.webrtc_client.video_tracks[self.track.id].set_weak_self(weakref.ref(self))
+        # self.webrtc_client.video_tracks[self.track.id].set_weak_self(weakref.ref(self))
         # set call_back function to handle the frame from receiver
-        self.webrtc_client.video_tracks[self.track.id].set_callback_func(CameraSensor._on_rgb_image_event_webrtc) 
-        self.webrtc_client.video_tracks[self.track.id].catg = 'Camera'
+        # self.webrtc_client.video_tracks[self.track.id].set_callback_func(CameraSensor._on_rgb_image_event_webrtc) 
+        # self.webrtc_client.video_tracks[self.track.id].catg = 'Camera'
         self.sensor.listen(lambda event: self.ready_to_send(event))
-        # self.webrtc_client.video_tracks[self.track.id].set_callback_func(test_callb) 
-        # self.webrtc_client.video_tracks[self.track.id].catg = 'test'
-        # self.sensor.listen(lambda event: self.test_send(event))
         print('creating camera track success')
-
-    def test_send(self, event):
-        print(event.frame)
-        img = np.array(event.raw_data)
-        img = img.reshape((self.image_height, self.image_width, 4))
-        img = img[:, :, :3]
-        print('img', img.shape)
-        source = 'camera'
-        image = np.load(f'/home/bupt/cykkk/record/{source}_processed_data_frame_100.npy')
-        image = image[:, :, :3]
-        self.image = image
-        # TODO: the following attr can't be transported, any other way to solve it?
-        self.frame = event.frame
-        self.timestamp = event.timestamp
-        self.webrtc_server.push_frame(self.track_id, img)
 
     def ready_to_send(self, event):
         """CAMERA  method"""
         image = np.array(event.raw_data)
         image = image.reshape((self.image_height, self.image_width, 4))
         image = image[:, :, :3]
-        
+        self.fps_calc.update()
         self.webrtc_server.push_frame(self.track_id, image) # push frame to track
+        if event.frame % 20 == 0:
+            print(f'from server {self.track_id}: {self.fps_calc.get_fps():.1f}fps')
         # TODO: the following attr can't be transported, any other way to solve it?
-        if event.frame < 10:
-            self.image = image
+        # if event.frame < 10:
+        self.image = image
         self.frame = event.frame
         self.timestamp = event.timestamp
+        # if not os.path.exists('../outputs'):
+        #     os.makedirs('../outputs')
+        # t = time.time()
+        # with open(f'../outputs/{self.track_id}.txt', 'a+', encoding='utf-8') as f:
+        #     f.write(f'{t}: {self.frame}, {self.timestamp}\n')
+        # if not os.path.exists(f'../outputs/video_track/{self.track_id}/std'):
+        #     os.makedirs(f'../outputs/video_track/{self.track_id}/std')
+        # try:
+        #     if self.frame % 50 == 1:
+        #        cv2.imwrite(f"../outputs/video_track/{self.track_id}/std/received_frame_{self.frame}.jpg", self.image)
+        # except Exception as e:
+        #     print(e)
 
 
     @staticmethod
@@ -194,13 +235,7 @@ class CameraSensor:
         if not self:
             return
         image = np.array(event.raw_data)
-        # if event.frame == 100:
-        #     save_raw_data(image, 100, 'camera')
-        #     print(image.shape)
         image = image.reshape((self.image_height, self.image_width, 4))
-        # if event.frame == 100:
-        #     save_processed_data(image, 100, 'camera')
-        #     print(image.shape)
         # we need to remove the alpha channel
         image = image[:, :, :3]
         # print(image.shape)
@@ -208,12 +243,6 @@ class CameraSensor:
         # TODO: the following attr can't be transported, any other way to solve it?
         self.frame = event.frame
         self.timestamp = event.timestamp
-        # if not os.path.exists(f'/home/bupt/cykkk/inputs/'):
-            # os.makedirs(f'/home/bupt/cykkk/inputs/')
-        # if self.frame < 50:
-        #     cv2.imwrite(f'/home/bupt/cykkk/inputs/{self.frame}.jpg', cv2.cvtColor(self.image, cv2.COLOR_RGB2BGR))
-        #     print(f'saving /home/bupt/cykkk/inputs/{self.frame}.jpg')
-        #     print(self.image) 
         
 
 class LidarSensor:
@@ -244,7 +273,7 @@ class LidarSensor:
 
     """
     def __init__(self, vehicle, world, config_yaml, global_position,
-                 webrtc_server=None, webrtc_client=None, server_loop=None, client_loop=None):
+                 Webrtc_server=None, Webrtc_client=None):
         if vehicle is not None:
             world = vehicle.get_world()
         blueprint = world.get_blueprint_library().find('sensor.lidar.ray_cast')
@@ -286,10 +315,8 @@ class LidarSensor:
         else:
             self.sensor = world.spawn_actor(blueprint, spawn_point)
 
-        self.webrtc_server = webrtc_server
-        self.webrtc_client = webrtc_client
-        self.server_loop = server_loop
-        self.client_loop = client_loop
+        self.Webrtc_server = Webrtc_server
+        self.Webrtc_client = Webrtc_client
         
         # lidar data
         self.data = None
@@ -301,17 +328,7 @@ class LidarSensor:
         weak_self = weakref.ref(self)
         self.sensor.listen(
         lambda event: LidarSensor._on_data_event(
-            weak_self, event))
-        # if not webrtc_server or not webrtc_client:
-        #     self.sensor.listen(
-        #         lambda event: LidarSensor._on_data_event(
-        #             weak_self, event))
-        # else:
-        #     # for datachannel
-        #     print('creating lidar')
-        #     self.vid = str(uuid.uuid1())
-        #     future = asyncio.run_coroutine_threadsafe(self.add_channel_and_listen(), server_loop)
-        #     future.result()                              
+            weak_self, event))                          
 
     async def add_channel_and_listen(self):
         self.channel, self.label = await self.webrtc_server.add_data_channel(self.vid) # add track
@@ -497,7 +514,7 @@ class PerceptionManager:
 
     def __init__(self, vehicle, config_yaml, cav_world,
                  data_dump=False, carla_world=None, infra_id=None,
-                 webrtc_server=None, webrtc_client=None, server_loop=None, client_loop=None):
+                 Webrtc_server=None, Webrtc_client=None):
         self.vehicle = vehicle
         self.carla_world = carla_world if carla_world is not None \
             else self.vehicle.get_world()
@@ -533,12 +550,15 @@ class PerceptionManager:
             assert len(mount_position) == self.camera_num, \
                 "The camera number has to be the same as the length of the" \
                 "relative positions list"
+            port = 8080
             for i in range(self.camera_num):
                 print(i, '/', self.camera_num)
                 camera = CameraSensor(
                                 vehicle, self.carla_world, mount_position[i],
-                                self.global_position, webrtc_server=webrtc_server, webrtc_client=webrtc_client, server_loop=server_loop, client_loop=client_loop)
+                                self.global_position, Webrtc_server=Webrtc_server, Webrtc_client=Webrtc_client, port=port)
                 self.rgb_camera.append(camera)
+                port += 1
+                time.sleep(1)
         else:
             self.rgb_camera = None
         print('Camera OK!')
@@ -550,10 +570,8 @@ class PerceptionManager:
                                      self.carla_world,
                                      config_yaml['lidar'],
                                      self.global_position,
-                                     webrtc_server=webrtc_server,
-                                     webrtc_client=webrtc_client,
-                                     server_loop=server_loop,
-                                     client_loop=client_loop)
+                                     Webrtc_server=Webrtc_server,
+                                     Webrtc_client=Webrtc_client)
             self.o3d_vis = o3d_visualizer_init(self.id)
         else:
             self.lidar = None
