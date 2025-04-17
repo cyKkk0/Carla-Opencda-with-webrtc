@@ -66,11 +66,10 @@ class CameraVideoStreamTrack(VideoStreamTrack):
         self.cap = cv2.VideoCapture(camera_id)
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        self.track_id = None
         self.frame_count = 0
-        if not os.path.exists(f'../inputs/video_track/{self.track_id}'):
-            print(f'output_folder not exist, creating inputs/video_track/{self.track_id}......')
-            os.makedirs(f'../inputs/video_track/{self.track_id}')
+        if not os.path.exists(f'../inputs/video_track/{self.id}'):
+            print(f'output_folder not exist, creating inputs/video_track/{self.id}......')
+            os.makedirs(f'../inputs/video_track/{self.id}')
 
     async def recv(self):
         self.frame_count += 1
@@ -80,9 +79,9 @@ class CameraVideoStreamTrack(VideoStreamTrack):
             return None
         try:
             if self.frame_count % 100 == 1:
-                cv2.imwrite(f'../inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', frame)
+                cv2.imwrite(f'../inputs/video_track/{self.id}/send_frame_{self.frame_count}.jpg', frame)
         except Exception as e:
-            print(self.track_id, e)
+            print(self.id, e)
         video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
         video_frame.pts = self.frame_count
         video_frame.time_base = fractions.Fraction(1, 30)  # 30 FPS
@@ -98,7 +97,6 @@ class ExternalVideoStreamTrack(VideoStreamTrack):
         super().__init__()
         self.frame = None
         self.frame_count = 0
-        self.track_id = None
         self.new_frame_event = asyncio.Event()
         self.fps_calculator = FpsCalculator(window_size=30)
 
@@ -125,16 +123,16 @@ class ExternalVideoStreamTrack(VideoStreamTrack):
         self.new_frame_event.clear()
         pts, time_base = await self.next_timestamp()
 
-        if not os.path.exists(f'../inputs/video_track/{self.track_id}'):
-            os.makedirs(f'../inputs/video_track/{self.track_id}')
+        if not os.path.exists(f'../inputs/video_track/{self.id}'):
+            os.makedirs(f'../inputs/video_track/{self.id}')
         if self.frame_count % 20 == 0:
-            print(f'from sender {self.id}: {self.fps_calculator.get_fps():.1f}fps')
+            print(f'\033[32mfrom sender {self.id}: {self.fps_calculator.get_fps():.1f}fps')
 
         try:
             if self.frame_count % 100 == 1:
-                cv2.imwrite(f'../inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', self.frame)
+                cv2.imwrite(f'../inputs/video_track/{self.id}/send_frame_{self.frame_count}.jpg', self.frame)
         except Exception as e:
-            print(self.track_id, e)
+            print(self.id, e)
         
         video_frame = VideoFrame.from_ndarray(self.frame, format="rgb24")
         
@@ -148,16 +146,15 @@ class LoopingVideoStreamTrack(VideoStreamTrack):
     def __init__(self, video_path):
         super().__init__()
         self.video_path = video_path
-        self.track_id = None
         self.cap = cv2.VideoCapture(video_path)
         self.frame_count = 0
         if not self.cap.isOpened():
             raise Exception(f"Could not open video file {video_path}")
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
         self.frame_count = 0
-        if not os.path.exists(f'../inputs/video_track/{self.track_id}'):
-            os.makedirs(f'../inputs/video_track/{self.track_id}')
-            print(f'creating ../inputs/video_track/{self.track_id} .......')
+        if not os.path.exists(f'../inputs/video_track/{self.id}'):
+            os.makedirs(f'../inputs/video_track/{self.id}')
+            print(f'creating ../inputs/video_track/{self.id} .......')
 
     async def recv(self):
         ret, frame = self.cap.read()
@@ -172,9 +169,9 @@ class LoopingVideoStreamTrack(VideoStreamTrack):
         self.frame_count += 1
         try:
             if self.frame_count % 100 == 1:
-                cv2.imwrite(f'../inputs/video_track/{self.track_id}/send_frame_{self.frame_count}.jpg', frame)
+                cv2.imwrite(f'../inputs/video_track/{self.id}/send_frame_{self.frame_count}.jpg', frame)
         except Exception as e:
-            print(self.track_id, e)
+            print(self.id, e)
         # Create video frame to send over WebRTC
         video_frame = VideoFrame.from_ndarray(frame, format="rgb24")
         video_frame.pts = self.frame_count              

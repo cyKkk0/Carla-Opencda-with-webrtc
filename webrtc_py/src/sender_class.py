@@ -20,9 +20,26 @@ except:
     pass
 
 
-def run_server(webrtc_server, server_loop):
+def run_server(webrtc_server, server_loop, test, fps, compressed):
     asyncio.set_event_loop(server_loop)
-    server_loop.run_until_complete(webrtc_server.run())
+    server_loop.run_until_complete(webrtc_server.run(test, fps, compressed))
+
+
+def get_all_pic(folder_path):
+    if not os.path.exists(folder_path):
+        print(f'{folder_path} not exists')
+        return []
+    res = []
+    # 遍历输入文件夹中的所有文件
+    for filename in os.listdir(folder_path):
+        input_path = os.path.join(folder_path, filename)
+        if os.path.isfile(input_path):
+            # 获取文件扩展名
+            ext = os.path.splitext(filename)[1].lower()
+            if ext in ['.jpg', '.jpeg', '.png']:
+                res.append(cv2.imread(input_path))
+    return res  
+
 
 
 def extract_port_from_sdp(sdp: str):
@@ -79,32 +96,25 @@ class Webrtc_server:
             await self.signaling.connect()
             self.if_connected = True
 
-        print('status: ', await self.pc.getStats())
         """重新协商 SDP 以更新媒体轨道"""
-        print("Starting SDP renegotiation...")
+        # print("Starting SDP renegotiation...")
         offer = await self.pc.createOffer()
-        print('Set local description')
+        # print('Set local description')
         await self.pc.setLocalDescription(offer)
-        print('Sending new SDP offer')
+        # print('Sending new SDP offer')
         await self.signaling.send(self.pc.localDescription)
-        print("Sent new SDP offer")
+        # print("Sent new SDP offer")
         obj = await self.signaling.receive()
         if isinstance(obj, RTCSessionDescription):
             await self.pc.setRemoteDescription(obj)
-            # print('port:', extract_port_from_sdp(obj.sdp))
-            print("Remote description set")
         elif obj is None:
             print("Signaling ended")
         else:
             print(obj)
 
-    async def add_video_track(self, track_id, source="camera", camera_id=0, width=640, height=480, file_path = './exam_video/test1.mp4'):
+    async def add_video_track(self, source="camera", camera_id=0, width=640, height=480, file_path = './exam_video/test1.mp4'):
         """ 运行时动态添加视频流（支持摄像头或外部输入） """
-        # if track_id in self.video_tracks:
-        #     print(f"Track {track_id} already exists.")
-        #     return
-        # TODO: track_id should be generated inside the function instead of outside
-        print('waiting for lock')
+        # print('waiting for lock')
         async with self.lock:
             print('get lock')
             # track_id = len(self.video_tracks)
@@ -126,7 +136,8 @@ class Webrtc_server:
 
             await self.renegotiate_sdp()
             print(f"--- Added video track: {track_id}")
-
+            
+            
             return video_track, track_id
 
     # iff necessary?
@@ -159,7 +170,7 @@ class Webrtc_server:
             await self.renegotiate_sdp()
             return channel, label
 
-    async def setup_webrtc_and_run(self, test=False):
+    async def setup_webrtc_and_run(self, test, fps, folder_path):
         if not test:
             await self.add_data_channel('test1')
             count = 0
@@ -168,31 +179,32 @@ class Webrtc_server:
                 count += 1
                 self.data_channels['test1'].send(pickle.dumps(f'hello {count}'))
         else:
-            ex_track, ex_track_id = await asyncio.create_task(self.add_video_track(len(self.video_tracks), source='external'))
+            for i in range(5):
+                ex_track, ex_track_id = await asyncio.create_task(self.add_video_track(source='external'))
             img = []
-            for i in range(10):
-                img.append(cv2.imread(f'/home/bupt/cykkk/carla&opencda/webrtc_py/test_source/pic/{i}.jpg'))
+            img = get_all_pic(folder_path)
             count = 0
             cnt = 0
-            task = asyncio.create_task(self.track_bitrate_monitor())
+            # task = asyncio.create_task(self.track_bitrate_monitor())
             while True:
-                random_number = round(random.uniform(0.04, 0.06), 2)
+                random_number = fps
+                # random_number = round(random.uniform(fps-0.01, fps+0.01), 2)
                 await asyncio.sleep(random_number)
                 count += 1
-                for i in range (ex_track_id + 1):
-                    self.push_frame(i, img[cnt])
-                cnt = (cnt + 1) % 9
+                for key in self.video_tracks:
+                    self.push_frame(key, img[cnt])
+                cnt = (cnt + 1) % len(img)
         self.running = asyncio.Event()
         await self.running.wait()
         
-    async def run(self):
+    async def run(self, test=False, fps=0.05, folder_path=''):
         """ 运行 WebRTC 服务器 """
         self.lock = asyncio.Lock()      # only one track can be added at a time
-        await self.setup_webrtc_and_run()
+        await self.setup_webrtc_and_run(test, fps, folder_path)
     
-    def run_server_in_new_thread(self):
+    def run_server_in_new_thread(self, test=False, fps=0.05, folder_path=''):
         server_loop = asyncio.new_event_loop()
-        thread1 = threading.Thread(target=run_server, args=(self, server_loop))
+        thread1 = threading.Thread(target=run_server, args=(self, server_loop, test, fps, folder_path))
         thread1.start()
         return thread1, server_loop
 
@@ -203,48 +215,12 @@ async def main():
     ip_address = "127.0.0.1"
     port = 8080
     streamer = Webrtc_server(ip_address, port)
-
-    task1 = asyncio.create_task(streamer.run())
+    folder_path = os.path.join(os.path.dirname(os.getcwd()), 'test_source/pic')
+    print(folder_path)
+    task1 = asyncio.create_task(streamer.run(test=True, folder_path=folder_path))
     await asyncio.sleep(5)
-    # await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='video_file', file_path='/home/bupt/cykkk/carla&opencda/webrtc_py/exam_video/test1.mp4'))
-    # await asyncio.create_task(streamer.add_data_channel('test1'))
-    # streamer.data_channels['test1'].call_back = call_back
-    # print(id(streamer.data_channels['test1']))
 
-    source = 'camera'
-    image = np.load(f'/home/bupt/cykkk/record/{source}_processed_data_frame_100.npy')
-    image = image[:, :, :3]
-    ex_track, ex_track_id = await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
-    ex_track, ex_track_id = await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
-    ex_track, ex_track_id = await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
-    ex_track, ex_track_id = await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
-    # ex_track, ex_track_id = await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
-    # ex_track, ex_track_id = await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
-    # ex_track, ex_track_id = await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
-    # ex_track, ex_track_id = await asyncio.create_task(streamer.add_video_track(len(streamer.video_tracks), source='external'))
-
-    # with open('/home/bupt/cykkk/record/lidar_processed_data_frame_100.npy', 'rb') as f:
-        # data = f.read()
-    # data_array = np.frombuffer(data, dtype=np.float32)
-    # await asyncio.create_task(streamer.add_data_channel('test2'))
-    img = []
-    for i in range(10):
-        img.append(cv2.imread(f'/home/bupt/cykkk/carla&opencda/webrtc_py/test_source/pic/{i}.jpg'))
-    count = 0
-    cnt = 0
-    # task3 = asyncio.create_task(streamer.track_bitrate_monitor())
-    while True:
-        random_number = round(random.uniform(0.04, 0.06), 2)
-        await asyncio.sleep(random_number)
-        count += 1
-        # streamer.data_channels['test1'].send(pickle.dumps(f'hello {count}'))
-        # if count > 100:
-            # break
-        # streamer.push_frame(ex_track_id, img[cnt])
-        for key in streamer.video_tracks:
-            streamer.push_frame(key, img[cnt])
-        cnt = (cnt + 1) % 9
-    await task1, task3
+    await task1
     
 
 if __name__ == "__main__":
