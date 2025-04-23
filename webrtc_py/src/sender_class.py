@@ -6,6 +6,7 @@ import os
 import random
 import time
 import threading
+import multiprocessing
 import numpy as np
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.signaling import TcpSocketSignaling
@@ -20,12 +21,16 @@ except:
     pass
 
 
-def run_server(webrtc_server, server_loop, test, fps, compressed):
+def run_server(webrtc_server, test, add_video, add_data, recv_pipe, label):
+    server_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(server_loop)
-    server_loop.run_until_complete(webrtc_server.run(test, fps, compressed))
+    server_loop.run_until_complete(webrtc_server.run(test, add_video, add_data, recv_pipe, label))
 
 
 def get_all_pic(folder_path):
+    """
+    load all pics in the folder_path/
+    """
     if not os.path.exists(folder_path):
         print(f'{folder_path} not exists')
         return []
@@ -68,7 +73,7 @@ class Webrtc_server:
         self.data_channels = {}  # 存储所有数据通道
         self.video_tracks = {}   # 存储所有视频流
         self.if_connected = False
-
+    # not so accurate
     async def track_bitrate_monitor(self):
         last_bytes = {}
         last_time = time.time()
@@ -97,13 +102,9 @@ class Webrtc_server:
             self.if_connected = True
 
         """重新协商 SDP 以更新媒体轨道"""
-        # print("Starting SDP renegotiation...")
         offer = await self.pc.createOffer()
-        # print('Set local description')
         await self.pc.setLocalDescription(offer)
-        # print('Sending new SDP offer')
         await self.signaling.send(self.pc.localDescription)
-        # print("Sent new SDP offer")
         obj = await self.signaling.receive()
         if isinstance(obj, RTCSessionDescription):
             await self.pc.setRemoteDescription(obj)
@@ -114,18 +115,13 @@ class Webrtc_server:
 
     async def add_video_track(self, source="camera", camera_id=0, width=640, height=480, file_path = './exam_video/test1.mp4'):
         """ 运行时动态添加视频流（支持摄像头或外部输入） """
-        # print('waiting for lock')
         async with self.lock:
-            print('get lock')
-            # track_id = len(self.video_tracks)
             if source == "camera":
                 video_track = CameraVideoStreamTrack(camera_id, width, height)
-                # print('I\'m a camera track!')
             elif source == "external":
                 video_track = ExternalVideoStreamTrack()
             elif source == 'video_file':
                 video_track = LoopingVideoStreamTrack(file_path)
-                # print('I\'m from file!')
             else:
                 raise ValueError("Invalid source. Use 'camera' or 'external'.")
             
@@ -136,11 +132,8 @@ class Webrtc_server:
 
             await self.renegotiate_sdp()
             print(f"--- Added video track: {track_id}")
-            
-            
             return video_track, track_id
 
-    # iff necessary?
     def push_frame(self, track_id, frame):
         """ 向指定的外部视频流推送帧 """
         if track_id in self.video_tracks and isinstance(self.video_tracks[track_id], ExternalVideoStreamTrack):
@@ -148,6 +141,13 @@ class Webrtc_server:
             # print(f"Pushed frame to {track_id}")
         else:
             print(f"Track {track_id} is not an external video track")
+
+    def push_data(self, label, data):
+        if label in self.data_channels:
+            try:
+                self.data_channels[label].send(pickle.dumps(data))
+            except Exception as e:
+                print(e)
 
     async def add_data_channel(self, label):
         """ 运行时动态添加数据通道 """
@@ -170,57 +170,66 @@ class Webrtc_server:
             await self.renegotiate_sdp()
             return channel, label
 
-    async def setup_webrtc_and_run(self, test, fps, folder_path):
-        if not test:
-            await self.add_data_channel('test1')
-            count = 0
+    async def setup_webrtc_and_run(self, test, add_video, add_data, recv_pipe, label):
+        if add_video and add_data:
+            print('you can only add track or channel at the same time')
+        elif add_video:
+            if not recv_pipe:
+                print("to run in new process, a recv pipe is needed")
+                return
+            ex_track, ex_track_id = await asyncio.create_task(self.add_video_track(source='external'))
+            loop = asyncio.get_event_loop()
+            # convert sync to async by loop.run_in_executor or other implementation like asyncio.Queue or aiozmq?
             while True:
-                await asyncio.sleep(5)
-                count += 1
-                self.data_channels['test1'].send(pickle.dumps(f'hello {count}'))
+                img_bytes = await loop.run_in_executor(
+                    None,  # 使用默认线程池
+                    recv_pipe.recv
+                )
+                img_encoded = np.frombuffer(img_bytes, dtype=np.uint8)
+                img = cv2.imdecode(img_encoded, cv2.IMREAD_COLOR)
+                self.push_frame(ex_track_id, img)
+        elif add_data:
+            if not recv_pipe:
+                print("to run in new process, a recv pipe is needed")
+                return
+            if not label:
+                label = 'admin'
+                print("no label config, use default label 'admin'")
+            await self.add_data_channel(label)
+            loop = asyncio.get_event_loop()
+            # convert sync to async by loop.run_in_executor or other implementation like asyncio.Queue or aiozmq?
+            while True:
+                data = await loop.run_in_executor(
+                    None,  # 使用默认线程池
+                    recv_pipe.recv
+                )
+                # load data and then send or send directly?
+                self.push_data(label, data)
+        elif test:
+            _, ex_track_id = await asyncio.create_task(self.add_video_track(source='external'))
+            frame = np.full((600, 800, 3), (255, 255, 255), dtype=np.uint8)
+            while True:
+                await asyncio.sleep(1) # 1 fps
+                self.push_frame(ex_track_id, frame)
         else:
-            for i in range(5):
-                ex_track, ex_track_id = await asyncio.create_task(self.add_video_track(source='external'))
-            img = []
-            img = get_all_pic(folder_path)
-            count = 0
-            cnt = 0
-            # task = asyncio.create_task(self.track_bitrate_monitor())
-            while True:
-                random_number = fps
-                # random_number = round(random.uniform(fps-0.01, fps+0.01), 2)
-                await asyncio.sleep(random_number)
-                count += 1
-                for key in self.video_tracks:
-                    self.push_frame(key, img[cnt])
-                cnt = (cnt + 1) % len(img)
-        self.running = asyncio.Event()
-        await self.running.wait()
+            print("no configuration, to maintain the server, add a data channel labeled 'admin'")
+            await self.add_data_channel('admin')
+            self.running = asyncio.Event()
+            await self.running.wait()
         
-    async def run(self, test=False, fps=0.05, folder_path=''):
+    async def run(self, test=False, add_video=False, add_data=False, recv_pipe=None, label=''):
         """ 运行 WebRTC 服务器 """
         self.lock = asyncio.Lock()      # only one track can be added at a time
-        await self.setup_webrtc_and_run(test, fps, folder_path)
+        await self.setup_webrtc_and_run(test, add_video, add_data, recv_pipe, label)
     
-    def run_server_in_new_thread(self, test=False, fps=0.05, folder_path=''):
-        server_loop = asyncio.new_event_loop()
-        thread1 = threading.Thread(target=run_server, args=(self, server_loop, test, fps, folder_path))
-        thread1.start()
-        return thread1, server_loop
-
-def call_back():
-    print('I call back!!!')
+    def run_server_in_new_process(self, test=False, add_video=False, add_data=False, recv_pipe=None, label=''):
+        proc1 = multiprocessing.Process(target=run_server, args=(self, test, add_video, add_data, recv_pipe, label))
+        proc1.start()
+        return proc1
+    
 
 async def main():
-    ip_address = "127.0.0.1"
-    port = 8080
-    streamer = Webrtc_server(ip_address, port)
-    folder_path = os.path.join(os.path.dirname(os.getcwd()), 'test_source/pic')
-    print(folder_path)
-    task1 = asyncio.create_task(streamer.run(test=True, folder_path=folder_path))
-    await asyncio.sleep(5)
-
-    await task1
+    pass
     
 
 if __name__ == "__main__":

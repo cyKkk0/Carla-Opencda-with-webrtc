@@ -1,6 +1,6 @@
+import multiprocessing
 import threading
 import asyncio
-import uvloop
 import time
 import cv2
 import os
@@ -64,9 +64,10 @@ class FpsCalculator:
         return self.fps
 
 
-def run_client(webrtc_client, client_loop):
+def run_client(webrtc_client, client_loop, send_pipe):
+    client_loop = asyncio.new_event_loop()
     asyncio.set_event_loop(client_loop)
-    client_loop.run_until_complete(webrtc_client.start())
+    client_loop.run_until_complete(webrtc_client.start(send_pipe))
 
 
 class VideoReceiver:
@@ -82,9 +83,9 @@ class VideoReceiver:
     def set_weak_self(self, weak_self):
         self.weak_self = weak_self
 
-    async def handle_track(self):
-        # print("Inside handle track")
+    async def handle_track(self, send_pipe):
         frame_count = 0
+        loop = asyncio.get_event_loop()
         while True:
             try:
                 frame = await asyncio.wait_for(self.track.recv(), timeout=5.0)
@@ -104,6 +105,57 @@ class VideoReceiver:
                         self.call_back2(weak_self=self.weak_self, image=frame)
                     elif self.catg == 'test':
                         self.call_back2()
+                if send_pipe:
+                    _, img_encoded = cv2.imencode('.jpg', frame)
+                    img_bytes = img_encoded.tobytes()
+                    send_pipe.send(img_bytes)
+
+                # if not os.path.exists(f'../outputs/video_track/{self.track_id}'):
+                    # os.makedirs(f'../outputs/video_track/{self.track_id}')
+                # try:
+                    # if frame_count % 50 == 1:
+                        # cv2.imwrite(f"../outputs/video_track/{self.track_id}/received_frame_{frame_count}.jpg", frame)
+                # except Exception as e:
+                    # print(e)
+            except asyncio.TimeoutError:
+                print(f"{self.track_id} Timeout waiting for frame, continuing...")
+            except Exception as e:
+                # print(self.track_id)
+                print(f"Error in handle_track: {str(e)}")
+                break
+        print("Exiting handle_track")
+
+
+class data_receiver:
+    def __init__(self):
+        pass
+
+    async def handle_track(self, send_pipe):
+        loop = asyncio.get_event_loop()
+        while True:
+            try:
+                frame = await asyncio.wait_for(self.track.recv(), timeout=5.0)
+                frame_count += 1                
+                if isinstance(frame, VideoFrame):
+                    self.fps_calc.update()
+                    frame = frame.to_ndarray(format="rgb24")
+                    if frame_count % 20 == 0:
+                        print(f'\033[33mfrom recv {self.track_id}: {self.fps_calc.get_fps():.1f}fps')
+                elif isinstance(frame, np.ndarray):
+                    print(f"Frame type: numpy array")
+                else:
+                    print(f"Unexpected frame type: {type(frame)}")
+                    continue
+                if self.call_back2:
+                    if self.catg == 'Camera':
+                        self.call_back2(weak_self=self.weak_self, image=frame)
+                    elif self.catg == 'test':
+                        self.call_back2()
+                if send_pipe:
+                    _, img_encoded = cv2.imencode('.jpg', frame)
+                    img_bytes = img_encoded.tobytes()
+                    send_pipe.send(img_bytes)
+
                 # if not os.path.exists(f'../outputs/video_track/{self.track_id}'):
                     # os.makedirs(f'../outputs/video_track/{self.track_id}')
                 # try:
@@ -128,16 +180,17 @@ class Webrtc_client:
         self.video_tracks = {}  # 存储所有视频流轨道
         self.data_channels = {}  # 存储所有数据通道
 
-    async def start(self):
+    async def start(self, send_pipe):
         # 连接到信令服务器
         await self.signaling.connect()
+        self.loop = asyncio.get_event_loop()
         # 配置 RTCPeerConnection 的事件处理
         @self.pc.on("track")
         def on_track(track):
             if isinstance(track, MediaStreamTrack):
                 print(f"Receiving {track.kind} track")
                 self.video_tracks[track.id] = VideoReceiver(track, track.id)
-                asyncio.ensure_future(self.video_tracks[track.id].handle_track())
+                asyncio.ensure_future(self.video_tracks[track.id].handle_track(send_pipe))
 
         @self.pc.on("datachannel")
         def on_datachannel(channel):
@@ -147,36 +200,22 @@ class Webrtc_client:
             @channel.on("message")
             def on_message(message):
                 # self.data_channels[channel.label].on_message(message)
-                if hasattr(self.data_channels[channel.label], 'call_back_2'):
-                    if self.data_channels[channel.label].cate == 'Lidar':
-                        self.data_channels[channel.label].call_back_2(self.data_channels[channel.label].weak_self, pickle.loads(message))
-                    else:
-                        print(f"Received on {channel.label}: {pickle.loads(message)}")   
-                else:
-                    print(f"Received on {channel.label}: {pickle.loads(message)}")
+                if send_pipe:
+                    self.loop.run_in_executor(None, send_pipe.send, message)
+
             
         @self.pc.on("connectionstatechange")
         async def on_connectionstatechange():
             print(f"Connection state is {self.pc.connectionState}")
 
-        # print("Waiting for offer from sender...")
         offer = await self.signaling.receive()
-        # print("Offer received")
         await self.pc.setRemoteDescription(offer)
-        # print("Remote description set")
 
         answer = await self.pc.createAnswer()
-        # print("Answer created")
         await self.pc.setLocalDescription(answer)
-        # print("Local description set")
-
-        # print("Local SDP:")
-        # print(self.pc.localDescription.sdp)
 
         await self.signaling.send(self.pc.localDescription)
-        # print("Answer sent to sender")
 
-        print("Waiting for connection to be established...")
         while self.pc.connectionState != "connected":
             await asyncio.sleep(0.1)
 
@@ -186,11 +225,8 @@ class Webrtc_client:
             if isinstance(obj, RTCSessionDescription):
                 await self.pc.setRemoteDescription(obj)
                 answer = await self.pc.createAnswer()
-                # print("Answer created")
                 await self.pc.setLocalDescription(answer)
-                # print("Local description set")
                 await self.signaling.send(self.pc.localDescription)
-                # print("Answer sent to sender")
             elif isinstance(obj, RTCIceCandidate):
                 await self.pc.addIceCandidate(obj)
             elif obj is BYE:
@@ -199,18 +235,21 @@ class Webrtc_client:
 
     def run_client_in_new_thread(self):
         time.sleep(3)
-        # asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
         client_loop = asyncio.new_event_loop()
         thread1 = threading.Thread(target=run_client, args=(self,client_loop))
         thread1.start()
         return thread1, client_loop
+    
+    def run_client_in_new_process(self, send_pipe=None):
+        time.sleep(3)
+        proc1 = multiprocessing.Process(target=run_client, args=(self,None, send_pipe))
+        proc1.start()
+        return proc1
 
 
 async def main():
-    ip_address = "127.0.0.1"
-    port = 8080
-    receiver = Webrtc_client(ip_address, port)
-    await receiver.start()
+    pass
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -18,21 +18,6 @@ def run_client(webrtc_client, client_loop):
     asyncio.set_event_loop(client_loop)
     client_loop.run_until_complete(webrtc_client.start())
 
-# async def test(webrtc_server):
-#     ex_track, ex_track_id = await asyncio.create_task(webrtc_server.add_video_track(len(webrtc_server.video_tracks), source='external'))
-#     img = []
-#     for i in range(10):
-#         img.append(cv2.imread(f'/home/bupt/cykkk/carla&opencda/webrtc_py/test_source/pic/{i}.jpg'))
-#     count = 0
-#     cnt = 0
-#     while True:
-#         # random_number = round(random.uniform(0.05, 0.06), 2)
-#         await asyncio.sleep(0.05)
-#         count += 1
-#         for key in webrtc_server.video_track:
-#             webrtc_server.push_frame(key, img[cnt])
-#         cnt = (cnt + 1) % 9
-
 
 if __name__ == '__main__':
     thread = []

@@ -11,6 +11,7 @@ outputs/
 trash/
 test/
 test_source/
+file_back_up/
 # C extensions
 *.so
 

@@ -79,14 +79,15 @@ def main():
     # run the scenario testing
     if opt.webrtc:
         sys.path.append(os.path.join(os.path.dirname(os.getcwd()), 'webrtc_py'))
-        # 动态导入模块
         sender_module = importlib.import_module('src.sender_class')
         receiver_module = importlib.import_module('src.receiver_class')
-        # 获取类
+        
         Webrtc_server = getattr(sender_module, 'Webrtc_server')
         Webrtc_client = getattr(receiver_module, 'Webrtc_client')
         
-    scenario_runner(opt, scene_dict, Webrtc_server=Webrtc_server, Webrtc_client=Webrtc_client)
+        scenario_runner(opt, scene_dict, Webrtc_server=Webrtc_server, Webrtc_client=Webrtc_client)
+    else:
+        scenario_runner(opt, scene_dict)
     
 
 if __name__ == '__main__':

@@ -13,7 +13,7 @@ import os
 import uuid
 import pickle
 import threading
-
+import multiprocessing
 import carla
 import cv2
 import numpy as np
@@ -129,8 +129,10 @@ class CameraSensor:
         if Webrtc_server and Webrtc_client:
             self.webrtc_server = Webrtc_server('127.0.0.1', port)
             self.webrtc_client = Webrtc_client('127.0.0.1', port)
-            _, server_loop = self.webrtc_server.run_server_in_new_thread()
-            _, _ = self.webrtc_client.run_client_in_new_thread()
+            self.parent_conn, child_conn = multiprocessing.Pipe()
+            recv_fa_conn, self.recv_ch_conn = multiprocessing.Pipe()
+            _ = self.webrtc_server.run_server_in_new_process(add_video=True,recv_pipe=child_conn)
+            _ = self.webrtc_client.run_client_in_new_process(send_pipe=recv_fa_conn)
         if vehicle is not None:
             self.sensor = world.spawn_actor(
                 blueprint, spawn_point, attach_to=vehicle)
@@ -149,58 +151,42 @@ class CameraSensor:
                 lambda event: CameraSensor._on_rgb_image_event(
                     weak_self, event))
         else:
-            # commit the task to the server loop
-            future = asyncio.run_coroutine_threadsafe(self.add_track_and_listen(), server_loop)
-            future.result()
+            self.sensor.listen(
+                lambda event: CameraSensor.send_from_pipe(weak_self, event)
+            )
+            thread1 = threading.Thread(target=self.recv_from_pipe, args=(weak_self, self.recv_ch_conn,))
+            thread1.start()
 
+    @staticmethod
+    def recv_from_pipe(weak_self, recv_ch_conn):
+        while True:
+            self = weak_self()
+            if not self:
+                break
+            img_bytes = recv_ch_conn.recv()
+            img_encoded = np.frombuffer(img_bytes, dtype=np.uint8)
+            img = cv2.imdecode(img_encoded, cv2.IMREAD_COLOR)
+            self.image = img
 
-    async def add_track_and_listen(self):
-        self.track, self.track_id = await self.webrtc_server.add_video_track(0, source='external') # add track
-        # self.webrtc_client.video_tracks[self.track.id].set_weak_self(weakref.ref(self))
-        # set call_back function to handle the frame from receiver
-        # self.webrtc_client.video_tracks[self.track.id].set_callback_func(CameraSensor._on_rgb_image_event_webrtc) 
-        # self.webrtc_client.video_tracks[self.track.id].catg = 'Camera'
-        self.sensor.listen(lambda event: self.ready_to_send(event))
-        print('creating camera track success')
-
-    def ready_to_send(self, event):
-        """CAMERA  method"""
+    @staticmethod
+    def send_from_pipe(weak_self, event):
+        self = weak_self()
+        if not self:
+            return
         image = np.array(event.raw_data)
         image = image.reshape((self.image_height, self.image_width, 4))
         image = image[:, :, :3]
         self.fps_calc.update()
-        self.webrtc_server.push_frame(self.track_id, image) # push frame to track
-        if event.frame % 20 == 0:
-            print(f'from server {self.track_id}: {self.fps_calc.get_fps():.1f}fps')
-        # TODO: the following attr can't be transported, any other way to solve it?
-        # if event.frame < 10:
-        self.image = image
+        try:
+            _, img = cv2.imencode('.jpg', image)
+            img = img.tobytes()
+            self.parent_conn.send(img)
+        except:
+            pass
+        if event.frame < 10:
+            self.image = image
         self.frame = event.frame
         self.timestamp = event.timestamp
-        # if not os.path.exists('../outputs'):
-        #     os.makedirs('../outputs')
-        # t = time.time()
-        # with open(f'../outputs/{self.track_id}.txt', 'a+', encoding='utf-8') as f:
-        #     f.write(f'{t}: {self.frame}, {self.timestamp}\n')
-        # if not os.path.exists(f'../outputs/video_track/{self.track_id}/std'):
-        #     os.makedirs(f'../outputs/video_track/{self.track_id}/std')
-        # try:
-        #     if self.frame % 50 == 1:
-        #        cv2.imwrite(f"../outputs/video_track/{self.track_id}/std/received_frame_{self.frame}.jpg", self.image)
-        # except Exception as e:
-        #     print(e)
-
-
-    @staticmethod
-    def _on_rgb_image_event_webrtc(weak_self, image):
-        """CAMERA  method"""
-        self = weak_self()
-        if not self:
-            return
-        self.image = image
-        # self.frame = event.frame
-        # self.timestamp = event.timestamp
-
 
     @staticmethod
     def spawn_point_estimation(relative_position, global_position):
@@ -238,7 +224,6 @@ class CameraSensor:
         image = image.reshape((self.image_height, self.image_width, 4))
         # we need to remove the alpha channel
         image = image[:, :, :3]
-        # print(image.shape)
         self.image = image
         # TODO: the following attr can't be transported, any other way to solve it?
         self.frame = event.frame
@@ -273,7 +258,7 @@ class LidarSensor:
 
     """
     def __init__(self, vehicle, world, config_yaml, global_position,
-                 Webrtc_server=None, Webrtc_client=None):
+                 Webrtc_server=None, Webrtc_client=None, port=None):
         if vehicle is not None:
             world = vehicle.get_world()
         blueprint = world.get_blueprint_library().find('sensor.lidar.ray_cast')
@@ -326,35 +311,48 @@ class LidarSensor:
         self.o3d_pointcloud = o3d.geometry.PointCloud()
 
         weak_self = weakref.ref(self)
-        self.sensor.listen(
-        lambda event: LidarSensor._on_data_event(
-            weak_self, event))                          
-
-    async def add_channel_and_listen(self):
-        self.channel, self.label = await self.webrtc_server.add_data_channel(self.vid) # add track
-        self.webrtc_client.data_channels[self.label].weak_self = weakref.ref(self)
-        self.webrtc_client.data_channels[self.label].cate = 'Lidar'
-        # set call_back function to handle the data from receiver        
-        self.webrtc_client.data_channels[self.label].call_back_2 = LidarSensor._on_data_event_webrtc
-        self.sensor.listen(lambda event: LidarSensor.ready_to_send(self, event))
+        if Webrtc_server and Webrtc_client:
+            self.webrtc_server = Webrtc_server('127.0.0.1', port)
+            self.webrtc_client = Webrtc_client('127.0.0.1', port)
+            self.parent_conn, child_conn = multiprocessing.Pipe()
+            recv_fa_conn, self.recv_ch_conn = multiprocessing.Pipe()
+            _ = self.webrtc_server.run_server_in_new_process(add_data=True,recv_pipe=child_conn,label=str(uuid.uuid1()))
+            _ = self.webrtc_client.run_client_in_new_process(send_pipe=recv_fa_conn)
+            self.sensor.listen(
+            lambda event: LidarSensor.send_from_pipe(
+            weak_self, event))        
+            thread1 = threading.Thread(target=LidarSensor.recv_from_pipe, args=(weak_self, self.recv_ch_conn,))
+            thread1.start()
+        else:
+            self.sensor.listen(
+            lambda event: LidarSensor._on_data_event(
+                weak_self, event))                          
 
     @staticmethod
-    def ready_to_send(self, event):
-        """Lidar  method"""
-        self.webrtc_server.data_channels[self.label].send(pickle.dumps(np.frombuffer(event.raw_data, dtype=np.dtype('f4'))))
-        # TODO: the following attr can't be transported, any other way to solve it?
+    def send_from_pipe(weak_self, event):
+        self = weak_self()
+        if not self:
+            return
+        data = np.copy(np.frombuffer(event.raw_data, dtype=np.dtype('f4')))
+        # (x, y, z, intensity)
+        data = np.reshape(data, (int(data.shape[0] / 4), 4))
+        self.parent_conn.send(pickle.dumps(data))
+        # if event.frame < 10:
+        self.data = data
+        # print(f'sender: {type(data)}')
         self.frame = event.frame
         self.timestamp = event.timestamp
 
     @staticmethod
-    def _on_data_event_webrtc(weak_self, data):
-        """Lidar  method"""
-        self = weak_self()
-        if not self:
-            return
-        data = np.reshape(data, (int(data.shape[0] / 4), 4))
-
-        self.data = data
+    def recv_from_pipe(weak_self, recv_ch_conn):
+        while True:
+            self = weak_self()
+            if not self:
+                break
+            data = recv_ch_conn.recv()
+            # print(f'recv: {type(pickle.loads(data))}')
+            # self.data = pickle.loads(data)
+            
 
     @staticmethod
     def _on_data_event(weak_self, event):
@@ -544,13 +542,13 @@ class PerceptionManager:
 
         # we only spawn the camera when perception module is activated or
         # camera visualization is needed
+        port = 8080
         if self.activate or self.camera_visualize:
             self.rgb_camera = []
             mount_position = config_yaml['camera']['positions']
             assert len(mount_position) == self.camera_num, \
                 "The camera number has to be the same as the length of the" \
                 "relative positions list"
-            port = 8080
             for i in range(self.camera_num):
                 print(i, '/', self.camera_num)
                 camera = CameraSensor(
@@ -571,7 +569,8 @@ class PerceptionManager:
                                      config_yaml['lidar'],
                                      self.global_position,
                                      Webrtc_server=Webrtc_server,
-                                     Webrtc_client=Webrtc_client)
+                                     Webrtc_client=Webrtc_client,
+                                     port=port)
             self.o3d_vis = o3d_visualizer_init(self.id)
         else:
             self.lidar = None
@@ -595,10 +594,6 @@ class PerceptionManager:
         # traffic light detection related
         self.traffic_thresh = config_yaml['traffic_light_thresh'] \
             if 'traffic_light_thresh' in config_yaml else 50
-
-    async def activate_sensor_web(self):
-        for camera in self.rgb_camera:
-            await camera.add_track_and_listen()
         
 
     def dist(self, a):

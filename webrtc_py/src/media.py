@@ -106,6 +106,7 @@ class ExternalVideoStreamTrack(VideoStreamTrack):
         self.frame_count += 1
         self.fps_calculator.update()
         self.new_frame_event.set()
+        # print(self.frame_count)
 
     async def next_timestamp(self):
         if hasattr(self, "_timestamp"):
@@ -120,9 +121,9 @@ class ExternalVideoStreamTrack(VideoStreamTrack):
     async def recv(self):
         # 等待新帧到达
         await self.new_frame_event.wait()
+        # print(self.frame_count)
         self.new_frame_event.clear()
         pts, time_base = await self.next_timestamp()
-
         if not os.path.exists(f'../inputs/video_track/{self.id}'):
             os.makedirs(f'../inputs/video_track/{self.id}')
         if self.frame_count % 20 == 0:
