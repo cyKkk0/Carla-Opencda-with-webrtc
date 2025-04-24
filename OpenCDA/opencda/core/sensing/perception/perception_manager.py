@@ -333,12 +333,14 @@ class LidarSensor:
         self = weak_self()
         if not self:
             return
-        data = np.copy(np.frombuffer(event.raw_data, dtype=np.dtype('f4')))
-        # (x, y, z, intensity)
-        data = np.reshape(data, (int(data.shape[0] / 4), 4))
-        self.parent_conn.send(pickle.dumps(data))
-        # if event.frame < 10:
-        self.data = data
+        if event.frame < 10:
+            data = np.copy(np.frombuffer(event.raw_data, dtype=np.dtype('f4')))
+            # (x, y, z, intensity)
+            data = np.reshape(data, (int(data.shape[0] / 4), 4))
+            self.data = data
+        # print(f"send {data.shape} {len(data.tobytes())}")
+        else:
+            self.parent_conn.send(event.raw_data.tobytes())
         # print(f'sender: {type(data)}')
         self.frame = event.frame
         self.timestamp = event.timestamp
@@ -350,8 +352,12 @@ class LidarSensor:
             if not self:
                 break
             data = recv_ch_conn.recv()
-            # print(f'recv: {type(pickle.loads(data))}')
-            # self.data = pickle.loads(data)
+            try:
+                arr = np.frombuffer(data, dtype=np.dtype('f4'))
+                arr2 = arr.reshape(int(arr.shape[0] / 4), 4)
+                self.data = arr2
+            except Exception as e:
+                print(e)
             
 
     @staticmethod
@@ -369,7 +375,7 @@ class LidarSensor:
         self.data = data
         self.frame = event.frame
         self.timestamp = event.timestamp
-        # if self.frame == 100:
+        # if self.frame == 20:
         #     save_raw_data(event.raw_data, event.frame, 'lidar')
         #     save_processed_data(data, event.frame, 'lidar')
 

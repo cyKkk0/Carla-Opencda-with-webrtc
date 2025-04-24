@@ -199,7 +199,6 @@ class Webrtc_client:
             print(f"Data channel {channel.label} created.")
             @channel.on("message")
             def on_message(message):
-                # self.data_channels[channel.label].on_message(message)
                 if send_pipe:
                     self.loop.run_in_executor(None, send_pipe.send, message)
 

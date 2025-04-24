@@ -4,7 +4,10 @@
 
 import carla
 import asyncio
+import pickle
+import time
 import threading
+import multiprocessing
 import opencda.scenario_testing.utils.sim_api as sim_api
 from opencda.core.common.cav_world import CavWorld
 from opencda.scenario_testing.evaluations.evaluate_manager import \
@@ -46,6 +49,13 @@ async def add_control_channel(single_cav):
     pass
 
 
+def recv_control(recv_pipe, single_cav):
+    control_dict = pickle.loads(recv_pipe.recv())
+    control = dict_to_control(control_dict)
+    # print(control)
+    single_cav.vehicle.apply_control(control)
+
+
 def run_scenario(opt, scenario_params, Webrtc_server=None, Webrtc_client=None):
     try:
         scenario_params = add_current_time(scenario_params)
@@ -80,6 +90,19 @@ def run_scenario(opt, scenario_params, Webrtc_server=None, Webrtc_client=None):
                               current_time=scenario_params['current_time'])
 
         spectator = scenario_manager.world.get_spectator()
+        # be careful, avoid using the same port twice when simulating several vehicles
+        port = 8099
+        webrtc_server = Webrtc_server('127.0.0.1', port)
+        webrtc_client = Webrtc_client('127.0.0.1', port)
+        parent_conn = {}
+        recv_ch_conn = {}
+        for i in range(len(single_cav_list)):
+            parent_conn[f'vehicle{i}'], child_conn = multiprocessing.Pipe()
+            recv_fa_conn, recv_ch_conn[f'vehicle{i}'] = multiprocessing.Pipe()
+            _ = webrtc_server.run_server_in_new_process(add_data=True,recv_pipe=child_conn,label=f'vehicle{i}')
+            _ = webrtc_client.run_client_in_new_process(send_pipe=recv_fa_conn)
+        # wait for some time of the establish of data channel, maybe several seconds...
+        time.sleep(5)
         # run steps
         while True:
             scenario_manager.tick()
@@ -91,13 +114,21 @@ def run_scenario(opt, scenario_params, Webrtc_server=None, Webrtc_client=None):
                 carla.Rotation(
                     pitch=-
                     90)))
-
+            threads = []
             for i, single_cav in enumerate(single_cav_list):
                 single_cav.update_info()
                 control = single_cav.run_step()
+                # print(len(pickle.dumps(control)))
                 data_dict = control_to_dict(control)
-                data_ctrl = dict_to_control(data_dict)
-                single_cav.vehicle.apply_control(data_ctrl)
+                # print(data_dict)
+                parent_conn[f'vehicle{i}'].send(pickle.dumps(data_dict))
+                _ = threading.Thread(target=recv_control, args=(recv_ch_conn[f'vehicle{i}'],single_cav))
+                threads.append(_)
+                _.start()
+                # data_ctrl = dict_to_control(data_dict)
+                # single_cav.vehicle.apply_control(data_ctrl)
+            for thread in threads:
+                thread.join()
 
     finally:
         eval_manager.evaluate()

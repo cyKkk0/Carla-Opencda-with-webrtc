@@ -2,7 +2,7 @@
 A WebRtc bridge between Carla and Opencda
 
 ## ENV -- 4.17
-Now you can create your conda environment by `conda env create -f environment.yml` now!
+Now you can create your conda environment by `conda env create -f environment.yml ` now!
 I think this file has included all dependencies you'll need.
 
 ## Local installation

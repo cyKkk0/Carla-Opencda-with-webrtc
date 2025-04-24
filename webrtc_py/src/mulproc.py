@@ -5,7 +5,9 @@ import threading
 import cv2
 import os
 import numpy as np
+import sys
 import pickle
+import hashlib
 import random
 from receiver_class import Webrtc_client
 from sender_class import Webrtc_server
@@ -29,13 +31,16 @@ def get_all_pic(folder_path):
 
 def recv_from_recv(pipe):
     while True:
-        print("waiting")
         # img_bytes = pipe.recv()
         # img_encoded = np.frombuffer(img_bytes, dtype=np.uint8)
         # img = cv2.imdecode(img_encoded, cv2.IMREAD_COLOR)
         # print("from recv", img.shape)
         data = pipe.recv()
-        print(f'recv {pickle.loads(data)}')
+        print(data)
+        # arr = np.frombuffer(data, dtype=np.dtype('f4'))
+        # print(arr.shape)
+        # arr2 = arr.reshape(int(arr.shape[0] / 4), 4)
+        # print(type(arr2), arr2.shape)
 
 
 if __name__ == "__main__":
@@ -59,22 +64,38 @@ if __name__ == "__main__":
         _ = webrtc_client.run_client_in_new_process(send_pipe=recv_fa_conn)
     proc = _
     time.sleep(3)
+    file_path = '/home/bupt/cykkk/record/1_lidar_processed_data_frame_100.npy'
 
+    data = np.load(file_path)
     thread1 = threading.Thread(target=recv_from_recv, args=(recv_ch_conn,))
     thread1.start()
     # for i in range(len(img)):
     #     _, img_encoded = cv2.imencode('.jpg', img[i])
     #     img[i] = img_encoded.tobytes()
     cnt = 0
+    # print(f"send size {sys.getsizeof(pickle.dumps(data))}")
+    # control msg
+    data = {
+            'throttle': 1.0, 
+            'steer': 0.005158573854714632, 
+            'brake': 0.0, 
+            'hand_brake': False, 
+            'reverse': False, 
+            'manual_gear_shift': False, 
+            'gear': 0
+            }   
+    print(pickle.dumps(data))
+    print(pickle.loads(pickle.dumps(data)))
     while True:
         for pipe in fa_pipe:
-            pipe.send(f'hello {cnt}')
+            pipe.send(data)
+        time.sleep(1)
         cnt += 1
         # img_bytes = img[cnt]
         # for pipe in fa_pipe:
         #     pipe.send(img_bytes)
         # cnt = (cnt + 1) % len(img)
-        time.sleep(0.1)
+        # time.sleep(0.1)
         # break
 
 

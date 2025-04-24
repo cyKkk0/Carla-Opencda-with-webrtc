@@ -145,7 +145,8 @@ class Webrtc_server:
     def push_data(self, label, data):
         if label in self.data_channels:
             try:
-                self.data_channels[label].send(pickle.dumps(data))
+                # you need to convert your data to bytes
+                self.data_channels[label].send(data)
             except Exception as e:
                 print(e)
 
